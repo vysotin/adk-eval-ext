@@ -184,3 +184,80 @@ def parse_agent(
         path.write_text(metadata.model_dump_json(indent=2))
 
     return metadata
+
+
+async def parse_agent_async(
+    agent: BaseAgent,
+    save_path: Optional[str] = None,
+) -> AgentMetadata:
+    """Parse an ADK agent, resolving MCP toolsets asynchronously.
+
+    Same as parse_agent() but resolves MCPToolset tools by connecting
+    to MCP servers and listing their available tools.
+
+    Args:
+        agent: A live ADK BaseAgent instance.
+        save_path: Optional file path to save the metadata JSON.
+
+    Returns:
+        AgentMetadata with MCP tools fully resolved.
+    """
+    metadata = await _parse_agent_recursive_async(agent)
+
+    if save_path:
+        path = Path(save_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(metadata.model_dump_json(indent=2))
+
+    return metadata
+
+
+async def _parse_agent_recursive_async(agent: BaseAgent) -> AgentMetadata:
+    """Recursively parse, resolving MCP toolsets."""
+    instruction = ""
+    model = ""
+    tools: list[ToolMetadata] = []
+    output_key = None
+    disallow_transfer_to_parent = False
+    disallow_transfer_to_peers = False
+
+    if isinstance(agent, LlmAgent):
+        raw_instruction = agent.instruction
+        if isinstance(raw_instruction, str):
+            instruction = raw_instruction
+        elif callable(raw_instruction):
+            instruction = f"<dynamic: {raw_instruction.__name__}>"
+        else:
+            instruction = str(raw_instruction) if raw_instruction else ""
+
+        model = agent.model if isinstance(agent.model, str) else str(agent.model) if agent.model else ""
+        output_key = agent.output_key
+        disallow_transfer_to_parent = agent.disallow_transfer_to_parent
+        disallow_transfer_to_peers = agent.disallow_transfer_to_peers
+
+        from adk_eval_tool.agent_parser.mcp_resolver import resolve_mcp_toolset
+
+        for tool in agent.tools:
+            if isinstance(tool, BaseToolset):
+                server_name = getattr(tool, "name", None) or type(tool).__name__
+                resolved = await resolve_mcp_toolset(tool, server_name=server_name)
+                tools.extend(resolved)
+            else:
+                tools.append(_parse_tool(tool))
+
+    sub_agents = []
+    for sub in agent.sub_agents:
+        sub_agents.append(await _parse_agent_recursive_async(sub))
+
+    return AgentMetadata(
+        name=agent.name,
+        agent_type=_get_agent_type(agent),
+        description=agent.description or "",
+        instruction=instruction,
+        model=model,
+        tools=tools,
+        sub_agents=sub_agents,
+        output_key=output_key,
+        disallow_transfer_to_parent=disallow_transfer_to_parent,
+        disallow_transfer_to_peers=disallow_transfer_to_peers,
+    )
