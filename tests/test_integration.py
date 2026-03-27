@@ -130,3 +130,71 @@ def test_metadata_roundtrip_through_json(tmp_path):
     assert len(restored.tools) == len(metadata.tools)
     assert len(restored.sub_agents) == len(metadata.sub_agents)
     assert restored.sub_agents[0].name == "sub_agent"
+
+
+def test_trace_tree_from_spans():
+    """Test building a trace tree from flat spans."""
+    from adk_eval_tool.eval_runner.trace_collector import build_trace_tree, SpanData
+
+    spans = [
+        SpanData(span_id="s1", name="invocation", start_time=0, end_time=10),
+        SpanData(span_id="s2", name="call_llm", parent_span_id="s1", start_time=1, end_time=3),
+        SpanData(span_id="s3", name="execute_tool:search", parent_span_id="s1", start_time=3, end_time=5),
+        SpanData(span_id="s4", name="call_llm", parent_span_id="s1", start_time=5, end_time=8),
+    ]
+    tree = build_trace_tree(spans)
+
+    assert len(tree) == 1
+    root = tree[0]
+    assert root.name == "invocation"
+    assert len(root.children) == 3
+    assert root.children[1].name == "execute_tool:search"
+
+
+def test_result_store_full_workflow(tmp_path):
+    """Test result store save/load/averages workflow."""
+    from adk_eval_tool.eval_runner.result_store import ResultStore
+    from adk_eval_tool.schemas import EvalRunResult
+
+    store = ResultStore(base_dir=str(tmp_path / "results"))
+
+    for i, (score, status) in enumerate([(0.9, "PASSED"), (0.7, "FAILED"), (0.85, "PASSED")]):
+        store.save_result(EvalRunResult(
+            run_id=f"run-{i}",
+            eval_set_id="test_set",
+            eval_id=f"case_{i}",
+            status=status,
+            overall_scores={"tool_trajectory_avg_score": score, "safety_v1": 1.0},
+            timestamp=float(i),
+        ))
+
+    all_results = store.load_results()
+    assert len(all_results) == 3
+
+    filtered = store.load_results(eval_set_id="test_set")
+    assert len(filtered) == 3
+
+    avgs = store.compute_averages(eval_set_id="test_set")
+    assert abs(avgs["tool_trajectory_avg_score"] - 0.8167) < 0.01
+    assert avgs["safety_v1"] == 1.0
+
+
+def test_eval_run_config_to_adk_config():
+    """Test that EvalRunConfig can be converted to ADK EvalConfig."""
+    from adk_eval_tool.schemas import EvalRunConfig, MetricConfig
+    from adk_eval_tool.eval_runner.runner import _build_eval_config_from_metrics
+
+    config = EvalRunConfig(
+        agent_module="test_agent",
+        metrics=[
+            MetricConfig(metric_name="tool_trajectory_avg_score", threshold=0.9, match_type="IN_ORDER"),
+            MetricConfig(metric_name="safety_v1", threshold=1.0),
+            MetricConfig(metric_name="hallucinations_v1", threshold=0.8, evaluate_intermediate=True),
+        ],
+        judge_model="gemini-2.5-flash",
+    )
+
+    eval_config = _build_eval_config_from_metrics(config.metrics, config.judge_model)
+    assert "tool_trajectory_avg_score" in eval_config.criteria
+    assert "safety_v1" in eval_config.criteria
+    assert "hallucinations_v1" in eval_config.criteria
