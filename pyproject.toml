@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adk-eval-tool"
+version = "0.1.0"
+description = "Agentic evaluation and testing tool for Google ADK agents"
+requires-python = ">=3.10"
+dependencies = [
+    "google-adk[eval]>=1.0.0",
+    "google-genai>=1.0.0",
+    "pydantic>=2.0",
+    "streamlit>=1.30.0",
+    "opentelemetry-sdk>=1.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
