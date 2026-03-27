@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+eval_traces.db
+eval_results/
+eval_datasets/
+eval_versions/
