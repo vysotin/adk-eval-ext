@@ -13,7 +13,11 @@ dependencies = [
     "pydantic>=2.0",
     "streamlit>=1.30.0",
     "opentelemetry-sdk>=1.20.0",
+    "python-dotenv>=1.0.0",
 ]
+
+[project.scripts]
+adk-eval-tool = "adk_eval_tool.cli:main"
 
 [project.optional-dependencies]
 dev = [

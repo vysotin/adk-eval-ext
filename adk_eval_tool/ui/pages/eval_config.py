@@ -65,9 +65,13 @@ def render():
     st.subheader("Agent Module")
     col1, col2 = st.columns(2)
     with col1:
+        default_module = st.session_state.get(
+            "_eval_agent_module",
+            st.session_state.get("preloaded_agent_module", ""),
+        )
         agent_module = st.text_input(
             "Agent module path",
-            value=st.session_state.get("_eval_agent_module", ""),
+            value=default_module,
             placeholder="my_agent.agent",
             key="eval_agent_module",
         )

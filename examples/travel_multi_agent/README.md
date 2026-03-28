@@ -17,11 +17,14 @@ The coordinator decides which specialist to delegate to based on user intent. Fo
 ## Running the Pipeline
 
 ```bash
-# From the project root
+# From the project root — run the full pipeline
 python examples/travel_multi_agent/run_pipeline.py
+
+# Or launch the UI with agent pre-loaded
+python -m adk_eval_tool examples.travel_multi_agent.agent root_agent
 ```
 
-This will:
+The pipeline script will:
 
 1. **Parse** the multi-agent tree into `output/metadata.json` (recursively captures all sub-agents and their tools)
 2. **Generate intents & scenarios** via Gemini into `output/intents.json`
@@ -75,15 +78,21 @@ adk eval examples.travel_multi_agent.agent \
 ## Using the Streamlit UI
 
 ```bash
+# Launch UI with the multi-agent pre-loaded (recommended)
+python -m adk_eval_tool examples.travel_multi_agent.agent root_agent
+
+# Or launch standalone
 streamlit run adk_eval_tool/ui/app.py
 ```
 
-1. Go to **Agent Metadata** → Upload `output/metadata.json` — see the full agent tree with sub-agents and their tools
-2. Go to **Intents & Scenarios** → Upload `output/intents.json` or regenerate with custom constraints
-3. Go to **Test Cases** → View trajectory-based test cases showing which sub-agent tools should be called
-4. Go to **Eval Config** → Configure `tool_trajectory_avg_score` (recommended `IN_ORDER` match for multi-agent) + other metrics
-5. Go to **Run Evaluation** → Launch eval; the coordinator will route to sub-agents which call their tools
-6. Go to **Eval Results** → See per-invocation tool trajectory diffs (expected vs actual tool calls)
+With the CLI launcher, the full agent tree is pre-loaded. Then:
+
+1. **Agent Metadata** — already shows the coordinator + sub-agents tree
+2. **Intents & Scenarios** → Generate or upload `output/intents.json`
+3. **Test Cases** → Generate trajectory-based eval sets covering sub-agent delegation
+4. **Eval Config** → Agent module is pre-filled; configure `tool_trajectory_avg_score` with `IN_ORDER` match
+5. **Run Evaluation** → Launch eval; coordinator routes to sub-agents which call their tools
+6. **Eval Results** → Per-invocation tool trajectory diffs (expected vs actual)
 
 ## Using the Python API Directly
 

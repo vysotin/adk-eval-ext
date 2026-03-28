@@ -15,11 +15,14 @@ The agent answers weather questions by choosing the right tool (or both) based o
 ## Running the Pipeline
 
 ```bash
-# From the project root
+# From the project root — run the full pipeline (parse + generate intents + generate test cases)
 python examples/weather_agent/run_pipeline.py
+
+# Or launch the UI with agent pre-loaded
+python -m adk_eval_tool examples.weather_agent.agent root_agent
 ```
 
-This will:
+The pipeline script will:
 
 1. **Parse** the agent into `output/metadata.json`
 2. **Generate intents & scenarios** via Gemini into `output/intents.json`
@@ -75,14 +78,20 @@ adk eval examples.weather_agent.agent \
 ## Using the Streamlit UI
 
 ```bash
+# Launch UI with agent pre-loaded (recommended)
+python -m adk_eval_tool examples.weather_agent.agent root_agent
+
+# Or launch standalone and load files manually
 streamlit run adk_eval_tool/ui/app.py
 ```
 
-1. Go to **Agent Metadata** → Upload `output/metadata.json`
-2. Go to **Intents & Scenarios** → Upload `output/intents.json` (or regenerate)
-3. Go to **Test Cases** → Upload any `.evalset.json` or generate new ones
-4. Go to **Eval Config** → Set metrics and thresholds
-5. Go to **Run Evaluation** → Launch eval against the live agent
+With the CLI launcher, the agent metadata is already loaded when the UI opens. Then:
+
+1. Go to **Intents & Scenarios** → Generate intents or upload `output/intents.json`
+2. Go to **Test Cases** → Generate eval sets or upload `.evalset.json` files
+3. Go to **Eval Config** → Agent module is pre-filled; set metrics and thresholds
+4. Go to **Run Evaluation** → Launch eval against the live agent
+5. Go to **Eval Results** → Explore scores and traces
 
 ## Using the Python API Directly
 

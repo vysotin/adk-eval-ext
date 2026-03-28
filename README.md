@@ -41,6 +41,27 @@ python examples/weather_agent/run_pipeline.py
 python examples/travel_multi_agent/run_pipeline.py
 ```
 
+### Launch UI with a pre-parsed agent (recommended)
+
+```bash
+# Parse an agent and launch Streamlit with metadata pre-loaded
+python -m adk_eval_tool examples.weather_agent.agent root_agent
+
+# Multi-agent example
+python -m adk_eval_tool examples.travel_multi_agent.agent root_agent
+
+# If installed via pip install -e .
+adk-eval-tool examples.weather_agent.agent root_agent
+
+# Custom port
+python -m adk_eval_tool examples.weather_agent.agent root_agent --port 8502
+```
+
+The CLI:
+1. Imports the agent module and parses the agent object
+2. On success: launches Streamlit UI with metadata already loaded, agent module pre-filled in Eval Config
+3. On failure: prints the error to stderr and exits with code 1
+
 ### Use the Python API
 
 ```python
@@ -85,8 +106,14 @@ eval_sets = asyncio.run(generate_all_test_cases(
 ### Run the Streamlit UI
 
 ```bash
+# With pre-parsed agent (recommended)
+python -m adk_eval_tool examples.weather_agent.agent root_agent
+
+# Or standalone (load agent manually in the UI)
 streamlit run adk_eval_tool/ui/app.py
 ```
+
+The `.env` file is loaded automatically — `GOOGLE_API_KEY` is available on all pages.
 
 The UI provides 7 pages:
 
