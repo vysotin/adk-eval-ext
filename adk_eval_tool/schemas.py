@@ -100,22 +100,42 @@ class TaskTrajectorySet(BaseModel):
 # --- Test Case Config ---
 
 
+class MultiTurnConfig(BaseModel):
+    """Configuration for multi-turn test case generation."""
+
+    enabled: bool = True
+    min_turns: int = 2
+    max_turns: int = 5
+    include_clarification: bool = True
+    include_correction: bool = True
+    include_follow_up: bool = True
+
+
+class ScenarioWeight(BaseModel):
+    """A scenario or failure type with its percentage weight."""
+
+    name: str
+    weight: float = 0.0  # percentage of total test cases (0-100)
+
+
 class TestGenConfig(BaseModel):
     """Configuration for test case generation (LLM-based)."""
 
+    total_test_cases_per_task: int = 10
+    multi_turn: MultiTurnConfig = Field(default_factory=MultiTurnConfig)
+    scenario_weights: list[ScenarioWeight] = Field(default_factory=lambda: [
+        ScenarioWeight(name="happy_path", weight=30),
+        ScenarioWeight(name="failure_path", weight=30),
+        ScenarioWeight(name="edge_case", weight=20),
+        ScenarioWeight(name="multi_turn", weight=20),
+    ])
+    failure_weights: list[ScenarioWeight] = Field(default_factory=lambda: [
+        ScenarioWeight(name="missing_required_input", weight=25),
+        ScenarioWeight(name="invalid_input_format", weight=25),
+        ScenarioWeight(name="tool_error", weight=25),
+        ScenarioWeight(name="ambiguous_request", weight=25),
+    ])
     num_simulations_per_task: int = 3
-    failure_types: list[str] = Field(default_factory=lambda: [
-        "missing_required_input",
-        "invalid_input_format",
-        "tool_error",
-        "ambiguous_request",
-    ])
-    scenario_types: list[str] = Field(default_factory=lambda: [
-        "happy_path",
-        "failure_path",
-        "edge_case",
-        "multi_turn",
-    ])
     judge_model: str = "gemini-2.0-flash"
     tool_trajectory_match_type: str = "IN_ORDER"
 

@@ -10,7 +10,7 @@ from adk_eval_tool.schemas import AgentMetadata, TestCaseConfig, TestGenConfig
 
 SYSTEM_INSTRUCTION_TEMPLATE = """You are an expert at creating evaluation datasets for Google ADK agents. You generate golden test cases in the ADK `.evalset.json` format.
 
-Given a task and its base trajectory (happy path), you generate test cases covering multiple scenario types and failure modes.
+Given a task and its base trajectory (happy path), you generate test cases covering multiple scenario types and failure modes according to the specified distribution.
 
 ## Agent Under Test
 
@@ -24,12 +24,16 @@ Given a task and its base trajectory (happy path), you generate test cases cover
 
 ## Test Generation Parameters
 
-- Total simulations per task: {num_simulations}
-- Scenario types to generate: {scenario_types}
-- Failure types to simulate: {failure_types}
+- Total test cases per task: {total_per_task}
 
-For each task, generate {num_simulations} total test cases covering the specified scenario types.
-For failure paths, simulate these specific failure types: {failure_types}.
+### Scenario Distribution
+{scenario_distribution}
+
+### Failure Type Distribution (within failure_path test cases)
+{failure_distribution}
+
+### Multi-Turn Configuration
+{multi_turn_config}
 
 ## ADK EvalSet JSON Format
 
@@ -42,7 +46,7 @@ You MUST produce JSON in this exact structure (camelCase keys):
   "description": "<What this eval set tests>",
   "evalCases": [
     {{{{
-      "evalId": "<task_id>__<scenario_type>_<description>",
+      "evalId": "<task_id>__<scenario_type>_<short_description>",
       "conversation": [
         {{{{
           "invocationId": "inv-<n>",
@@ -77,9 +81,46 @@ You MUST produce JSON in this exact structure (camelCase keys):
 5. `evalSetId` format: `<agent_name>__<task_id>`
 6. Multi-turn trajectories have multiple entries in the `conversation` array
 7. toolResponses should only contain 'name', 'id', and 'response' fields (NO 'error' field)
+8. Follow the scenario and failure distributions exactly
 
 Use the `save_eval_set` tool to save your output. Use the `validate_eval_set` tool to check your JSON before saving.
 """
+
+
+def _format_scenario_distribution(gen_config: TestGenConfig) -> str:
+    total = gen_config.total_test_cases_per_task
+    lines = []
+    for sw in gen_config.scenario_weights:
+        count = round(total * sw.weight / 100)
+        lines.append(f"- {sw.name}: {sw.weight}% (~{count} test cases)")
+    return "\n".join(lines) if lines else "- (use default distribution)"
+
+
+def _format_failure_distribution(gen_config: TestGenConfig) -> str:
+    lines = []
+    for fw in gen_config.failure_weights:
+        lines.append(f"- {fw.name}: {fw.weight}%")
+    return "\n".join(lines) if lines else "- (use default distribution)"
+
+
+def _format_multi_turn_config(gen_config: TestGenConfig) -> str:
+    mt = gen_config.multi_turn
+    if not mt.enabled:
+        return "Multi-turn test cases: DISABLED"
+    parts = [
+        f"- Enabled: yes",
+        f"- Turn range: {mt.min_turns}-{mt.max_turns} turns",
+    ]
+    turn_types = []
+    if mt.include_clarification:
+        turn_types.append("clarification (user asks for more details)")
+    if mt.include_correction:
+        turn_types.append("correction (user corrects earlier input)")
+    if mt.include_follow_up:
+        turn_types.append("follow-up (user asks related question)")
+    if turn_types:
+        parts.append(f"- Turn types: {', '.join(turn_types)}")
+    return "\n".join(parts)
 
 
 def build_testcase_system_instruction(
@@ -96,7 +137,8 @@ def build_testcase_system_instruction(
         metrics=metrics,
         match_type=config.tool_trajectory_match_type,
         judge_model=config.judge_model,
-        num_simulations=gen_config.num_simulations_per_task,
-        scenario_types=", ".join(gen_config.scenario_types),
-        failure_types=", ".join(gen_config.failure_types),
+        total_per_task=gen_config.total_test_cases_per_task,
+        scenario_distribution=_format_scenario_distribution(gen_config),
+        failure_distribution=_format_failure_distribution(gen_config),
+        multi_turn_config=_format_multi_turn_config(gen_config),
     )

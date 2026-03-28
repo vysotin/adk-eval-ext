@@ -68,6 +68,14 @@ async def generate_test_cases(
     session_service = InMemorySessionService()
     runner = Runner(agent=agent, app_name="testcase_gen", session_service=session_service)
 
+    # Build weight summaries for the prompt
+    scenario_summary = ", ".join(
+        f"{sw.name}={sw.weight}%" for sw in gen_config.scenario_weights
+    ) if gen_config.scenario_weights else "default distribution"
+    failure_summary = ", ".join(
+        f"{fw.name}={fw.weight}%" for fw in gen_config.failure_weights
+    ) if gen_config.failure_weights else "default distribution"
+
     prompt = f"""Generate an ADK EvalSet for this task:
 
 Task: {task.name} ({task.task_id})
@@ -76,9 +84,9 @@ Description: {task.description}
 Base trajectories (happy paths):
 {json.dumps([t.model_dump() for t in task.trajectories], indent=2)}
 
-Generate {gen_config.num_simulations_per_task} test cases total.
-Scenario types to cover: {', '.join(gen_config.scenario_types)}
-Failure types to simulate: {', '.join(gen_config.failure_types)}
+Generate exactly {gen_config.total_test_cases_per_task} test cases total.
+Scenario distribution: {scenario_summary}
+Failure distribution (within failure_path): {failure_summary}
 
 IMPORTANT: In toolResponses, only use fields 'name', 'id', and 'response'. Do NOT include 'error' or other extra fields.
 

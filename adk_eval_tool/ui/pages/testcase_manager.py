@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from adk_eval_tool.schemas import TestCaseConfig, TestGenConfig
+from adk_eval_tool.schemas import TestCaseConfig, TestGenConfig, MultiTurnConfig, ScenarioWeight
 from adk_eval_tool.ui.components.json_editor import json_editor
 
 
@@ -36,61 +36,165 @@ def _render_generate_tab():
         st.warning("Generate tasks first (Tasks & Trajectories page).")
         return
 
-    # --- User Simulation Parameters ---
-    st.markdown("#### User Simulations")
-    col_sim1, col_sim2 = st.columns(2)
-    with col_sim1:
-        num_simulations = st.number_input(
-            "Simulations per task",
-            min_value=1, max_value=20, value=3,
-            help="Total number of test cases to generate per task",
-            key="tc_num_sims",
+    # --- General settings ---
+    st.markdown("#### General Settings")
+    col_gen1, col_gen2, col_gen3 = st.columns(3)
+    with col_gen1:
+        total_per_task = st.number_input(
+            "Total test cases per task",
+            min_value=1, max_value=50, value=10,
+            help="Total number of test cases to generate per task across all scenario types",
+            key="tc_total_per_task",
         )
+    with col_gen2:
         judge_model = st.selectbox(
             "Generator model",
             ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
             key="tc_judge_model",
         )
-    with col_sim2:
+    with col_gen3:
         match_type = st.selectbox(
             "Tool trajectory match type",
             ["IN_ORDER", "EXACT", "ANY_ORDER"],
             key="tc_match_type",
         )
 
-    st.markdown("**Scenario types to generate:**")
-    default_scenarios = ["happy_path", "failure_path", "edge_case", "multi_turn"]
-    scenario_types = st.multiselect(
-        "Scenario types",
-        options=["happy_path", "failure_path", "edge_case", "multi_turn", "boundary_value", "concurrent_tool_use"],
-        default=default_scenarios,
-        key="tc_scenario_types",
-        label_visibility="collapsed",
+    st.divider()
+
+    # --- Multi-turn test cases ---
+    st.markdown("#### Multi-Turn Test Cases")
+    enable_multi_turn = st.checkbox("Enable multi-turn test cases", value=True, key="tc_multi_turn_enabled")
+
+    multi_turn = MultiTurnConfig(enabled=enable_multi_turn)
+    if enable_multi_turn:
+        col_mt1, col_mt2 = st.columns(2)
+        with col_mt1:
+            mt_min = st.number_input("Min turns", min_value=2, max_value=10, value=2, key="tc_mt_min")
+            mt_max = st.number_input("Max turns", min_value=2, max_value=20, value=5, key="tc_mt_max")
+        with col_mt2:
+            mt_clarification = st.checkbox("Include clarification turns", value=True, key="tc_mt_clarification")
+            mt_correction = st.checkbox("Include correction turns", value=True, key="tc_mt_correction")
+            mt_follow_up = st.checkbox("Include follow-up turns", value=True, key="tc_mt_followup")
+        multi_turn = MultiTurnConfig(
+            enabled=True,
+            min_turns=mt_min,
+            max_turns=mt_max,
+            include_clarification=mt_clarification,
+            include_correction=mt_correction,
+            include_follow_up=mt_follow_up,
+        )
+
+    st.divider()
+
+    # --- Scenario types with weights ---
+    st.markdown("#### Scenario Types & Weights")
+    st.caption(f"Distribute {total_per_task} test cases across scenario types. Weights should sum to 100%.")
+
+    all_scenario_types = [
+        "happy_path", "failure_path", "edge_case", "multi_turn",
+        "boundary_value", "concurrent_tool_use",
+    ]
+    default_scenario_weights = {"happy_path": 30, "failure_path": 30, "edge_case": 20, "multi_turn": 20}
+
+    scenario_weights: list[ScenarioWeight] = []
+    scenario_cols = st.columns([2, 1, 1])
+    scenario_cols[0].markdown("**Scenario type**")
+    scenario_cols[1].markdown("**Enabled**")
+    scenario_cols[2].markdown("**Weight %**")
+
+    for stype in all_scenario_types:
+        cols = st.columns([2, 1, 1])
+        with cols[1]:
+            enabled = st.checkbox(
+                stype, value=stype in default_scenario_weights,
+                key=f"tc_scen_enable_{stype}", label_visibility="collapsed",
+            )
+        with cols[0]:
+            st.markdown(f"`{stype}`")
+        if enabled:
+            with cols[2]:
+                weight = st.number_input(
+                    f"{stype} weight", min_value=0, max_value=100,
+                    value=default_scenario_weights.get(stype, 10),
+                    key=f"tc_scen_weight_{stype}", label_visibility="collapsed",
+                )
+            scenario_weights.append(ScenarioWeight(name=stype, weight=weight))
+
+    total_scenario_weight = sum(sw.weight for sw in scenario_weights)
+    if scenario_weights and total_scenario_weight != 100:
+        st.warning(f"Scenario weights sum to {total_scenario_weight}%, should be 100%.")
+    elif scenario_weights:
+        # Show distribution preview
+        preview_parts = []
+        for sw in scenario_weights:
+            count = round(total_per_task * sw.weight / 100)
+            preview_parts.append(f"{sw.name}: ~{count}")
+        st.caption(f"Distribution: {', '.join(preview_parts)}")
+
+    st.divider()
+
+    # --- Failure types with weights ---
+    st.markdown("#### Failure Types & Weights")
+    st.caption("Distribute failure_path test cases across failure types. Weights should sum to 100%.")
+
+    all_failure_types = [
+        "missing_required_input", "invalid_input_format", "tool_error",
+        "ambiguous_request", "unauthorized_access", "timeout",
+        "out_of_scope_request", "partial_input",
+    ]
+    default_failure_weights = {
+        "missing_required_input": 25, "invalid_input_format": 25,
+        "tool_error": 25, "ambiguous_request": 25,
+    }
+
+    failure_weights: list[ScenarioWeight] = []
+    fail_header_cols = st.columns([2, 1, 1])
+    fail_header_cols[0].markdown("**Failure type**")
+    fail_header_cols[1].markdown("**Enabled**")
+    fail_header_cols[2].markdown("**Weight %**")
+
+    for ftype in all_failure_types:
+        cols = st.columns([2, 1, 1])
+        with cols[1]:
+            enabled = st.checkbox(
+                ftype, value=ftype in default_failure_weights,
+                key=f"tc_fail_enable_{ftype}", label_visibility="collapsed",
+            )
+        with cols[0]:
+            st.markdown(f"`{ftype}`")
+        if enabled:
+            with cols[2]:
+                weight = st.number_input(
+                    f"{ftype} weight", min_value=0, max_value=100,
+                    value=default_failure_weights.get(ftype, 10),
+                    key=f"tc_fail_weight_{ftype}", label_visibility="collapsed",
+                )
+            failure_weights.append(ScenarioWeight(name=ftype, weight=weight))
+
+    total_failure_weight = sum(fw.weight for fw in failure_weights)
+    if failure_weights and total_failure_weight != 100:
+        st.warning(f"Failure weights sum to {total_failure_weight}%, should be 100%.")
+
+    st.divider()
+
+    # --- User Simulations ---
+    st.markdown("#### User Simulations")
+    num_simulations = st.number_input(
+        "User simulations per task",
+        min_value=0, max_value=20, value=3,
+        help="Additional dynamic conversation simulations per task (uses ADK user simulator)",
+        key="tc_num_sims",
     )
 
-    st.markdown("**Failure types to simulate:**")
-    default_failures = ["missing_required_input", "invalid_input_format", "tool_error", "ambiguous_request"]
-    failure_types = st.multiselect(
-        "Failure types",
-        options=[
-            "missing_required_input",
-            "invalid_input_format",
-            "tool_error",
-            "ambiguous_request",
-            "unauthorized_access",
-            "timeout",
-            "out_of_scope_request",
-            "partial_input",
-        ],
-        default=default_failures,
-        key="tc_failure_types",
-        label_visibility="collapsed",
-    )
+    st.divider()
 
+    # --- Build configs ---
     gen_config = TestGenConfig(
+        total_test_cases_per_task=total_per_task,
+        multi_turn=multi_turn,
+        scenario_weights=scenario_weights,
+        failure_weights=failure_weights,
         num_simulations_per_task=num_simulations,
-        failure_types=failure_types,
-        scenario_types=scenario_types,
         judge_model=judge_model,
         tool_trajectory_match_type=match_type,
     )
@@ -103,8 +207,6 @@ def _render_generate_tab():
         judge_model=judge_model,
         tool_trajectory_match_type=match_type,
     )
-
-    st.divider()
 
     # --- Task selection ---
     task_set = st.session_state.task_set
