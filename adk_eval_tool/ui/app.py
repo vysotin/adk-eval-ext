@@ -29,6 +29,14 @@ st.set_page_config(
     layout="wide",
 )
 
+# Hide Streamlit's auto-generated multi-page navigation links in the sidebar.
+# We use our own radio-based navigation instead.
+st.html("""
+<style>
+    [data-testid="stSidebarNav"] { display: none; }
+</style>
+""")
+
 
 def _init_session_state():
     """Initialize session state with defaults and any pre-loaded data."""
