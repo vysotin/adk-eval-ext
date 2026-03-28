@@ -12,3 +12,6 @@ eval_versions/
 uv.lock
 tests/e2e/screenshots/
 .playwright-cli/
+.env
+.env
+travel_coordinator_tasks.json

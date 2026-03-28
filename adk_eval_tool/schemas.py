@@ -100,6 +100,26 @@ class TaskTrajectorySet(BaseModel):
 # --- Test Case Config ---
 
 
+class TestGenConfig(BaseModel):
+    """Configuration for test case generation (LLM-based)."""
+
+    num_simulations_per_task: int = 3
+    failure_types: list[str] = Field(default_factory=lambda: [
+        "missing_required_input",
+        "invalid_input_format",
+        "tool_error",
+        "ambiguous_request",
+    ])
+    scenario_types: list[str] = Field(default_factory=lambda: [
+        "happy_path",
+        "failure_path",
+        "edge_case",
+        "multi_turn",
+    ])
+    judge_model: str = "gemini-2.0-flash"
+    tool_trajectory_match_type: str = "IN_ORDER"
+
+
 class TestCaseConfig(BaseModel):
     """Configuration for test case generation and evaluation."""
 
@@ -129,6 +149,22 @@ class MetricConfig(BaseModel):
     rubric: Optional[str] = None
 
 
+class UserSimulatorConfig(BaseModel):
+    """Configuration for ADK user simulator (conversation_scenario tests)."""
+
+    model: str = "gemini-2.5-flash"
+    max_allowed_invocations: int = 20
+    custom_instructions: Optional[str] = None
+
+
+class CustomMetricDef(BaseModel):
+    """Definition of a custom evaluation metric."""
+
+    name: str
+    code_path: str  # e.g., "my_module.my_metric_function"
+    description: str = ""
+
+
 class EvalRunConfig(BaseModel):
     """Configuration for running an evaluation."""
 
@@ -138,6 +174,8 @@ class EvalRunConfig(BaseModel):
     judge_model: str = "gemini-2.5-flash"
     num_runs: int = 2
     trace_db_path: str = "eval_traces.db"
+    user_simulator: Optional[UserSimulatorConfig] = None
+    custom_metrics: list[CustomMetricDef] = Field(default_factory=list)
 
 
 class TraceSpanNode(BaseModel):

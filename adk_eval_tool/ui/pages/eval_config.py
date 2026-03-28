@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from adk_eval_tool.schemas import EvalRunConfig, MetricConfig
+from adk_eval_tool.schemas import EvalRunConfig, MetricConfig, UserSimulatorConfig, CustomMetricDef
 
 
 BUILTIN_METRICS = {
@@ -155,6 +155,66 @@ def render():
                 rubric=rubric if rubric else None,
             ))
 
+    # --- User Simulator Config ---
+    st.divider()
+    st.subheader("User Simulator (for conversation_scenario tests)")
+
+    enable_user_sim = st.checkbox(
+        "Enable user simulator",
+        value=False,
+        key="enable_user_sim",
+        help="Required for conversation_scenario eval cases. Uses an LLM to simulate user turns.",
+    )
+
+    user_sim_config = None
+    if enable_user_sim:
+        col_sim1, col_sim2 = st.columns(2)
+        with col_sim1:
+            sim_model = st.selectbox(
+                "Simulator model",
+                ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+                key="sim_model",
+            )
+            max_invocations = st.number_input(
+                "Max invocations",
+                min_value=1, max_value=50, value=20,
+                key="sim_max_invocations",
+                help="Maximum conversation turns before stopping (-1 for unlimited)",
+            )
+        with col_sim2:
+            custom_instructions = st.text_area(
+                "Custom instructions (optional)",
+                placeholder="Must contain {{ stop_signal }}, {{ conversation_plan }}, {{ conversation_history }}",
+                key="sim_custom_instructions",
+                height=100,
+            )
+        user_sim_config = UserSimulatorConfig(
+            model=sim_model,
+            max_allowed_invocations=max_invocations,
+            custom_instructions=custom_instructions if custom_instructions else None,
+        )
+
+    # --- Custom Metrics ---
+    st.divider()
+    st.subheader("Custom Metrics (optional)")
+
+    custom_metrics: list[CustomMetricDef] = []
+    num_custom = st.number_input(
+        "Number of custom metrics",
+        min_value=0, max_value=10, value=0,
+        key="num_custom_metrics",
+    )
+    for i in range(int(num_custom)):
+        with st.expander(f"Custom Metric {i + 1}", expanded=True):
+            cm_name = st.text_input("Metric name", key=f"cm_name_{i}", placeholder="my_custom_metric")
+            cm_path = st.text_input("Code path", key=f"cm_path_{i}", placeholder="my_module.my_metric_function")
+            cm_desc = st.text_input("Description", key=f"cm_desc_{i}", placeholder="What this metric measures")
+            if cm_name and cm_path:
+                custom_metrics.append(CustomMetricDef(
+                    name=cm_name, code_path=cm_path, description=cm_desc,
+                ))
+
+    # --- Save ---
     st.divider()
 
     if st.button("Save Configuration", type="primary"):
@@ -165,11 +225,18 @@ def render():
             judge_model=judge_model,
             num_runs=num_runs,
             trace_db_path=trace_db,
+            user_simulator=user_sim_config,
+            custom_metrics=custom_metrics,
         )
         st.session_state.eval_run_config = eval_config
         st.session_state._eval_agent_module = agent_module
         st.session_state._eval_agent_name = agent_name
-        st.success(f"Saved config: {len(metrics)} metrics enabled")
+        parts = [f"{len(metrics)} metrics"]
+        if user_sim_config:
+            parts.append("user simulator ON")
+        if custom_metrics:
+            parts.append(f"{len(custom_metrics)} custom metrics")
+        st.success(f"Saved config: {', '.join(parts)}")
 
     if st.session_state.eval_run_config:
         config = st.session_state.eval_run_config

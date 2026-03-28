@@ -18,6 +18,8 @@ from adk_eval_tool.schemas import (
     EvalRunConfig,
     EvalRunResult,
     MetricConfig,
+    UserSimulatorConfig,
+    CustomMetricDef,
 )
 from adk_eval_tool.eval_runner.trace_collector import (
     setup_trace_collection,
@@ -27,9 +29,14 @@ from adk_eval_tool.eval_runner.trace_collector import (
 from adk_eval_tool.eval_runner.result_store import ResultStore
 
 
-def _build_eval_config_from_metrics(metrics: list[MetricConfig], judge_model: str):
-    """Convert our MetricConfig list to ADK EvalConfig."""
-    from google.adk.evaluation.eval_config import EvalConfig
+def _build_eval_config_from_metrics(
+    metrics: list[MetricConfig],
+    judge_model: str,
+    user_sim: Optional[UserSimulatorConfig] = None,
+    custom_metrics: Optional[list[CustomMetricDef]] = None,
+):
+    """Convert our config to ADK EvalConfig."""
+    from google.adk.evaluation.eval_config import EvalConfig, CustomMetricConfig
     from google.adk.evaluation.eval_metrics import (
         BaseCriterion,
         ToolTrajectoryCriterion,
@@ -70,7 +77,37 @@ def _build_eval_config_from_metrics(metrics: list[MetricConfig], judge_model: st
         else:
             criteria[mc.metric_name] = BaseCriterion(threshold=mc.threshold)
 
-    return EvalConfig(criteria=criteria)
+    # Build user simulator config if provided
+    adk_user_sim = None
+    if user_sim:
+        try:
+            from google.adk.evaluation.simulation.llm_backed_user_simulator import (
+                LlmBackedUserSimulatorConfig,
+            )
+            adk_user_sim = LlmBackedUserSimulatorConfig(
+                model=user_sim.model,
+                max_allowed_invocations=user_sim.max_allowed_invocations,
+                custom_instructions=user_sim.custom_instructions,
+            )
+        except ImportError:
+            pass
+
+    # Build custom metrics config if provided
+    adk_custom_metrics = None
+    if custom_metrics:
+        from google.adk.agents.common_configs import CodeConfig
+        adk_custom_metrics = {}
+        for cm in custom_metrics:
+            adk_custom_metrics[cm.name] = CustomMetricConfig(
+                code_config=CodeConfig(name=cm.code_path),
+                description=cm.description,
+            )
+
+    return EvalConfig(
+        criteria=criteria,
+        user_simulator_config=adk_user_sim,
+        custom_metrics=adk_custom_metrics,
+    )
 
 
 def _get_agent(module_name: str, agent_name: Optional[str] = None) -> BaseAgent:
@@ -198,7 +235,9 @@ async def run_evaluation(
     agent = _get_agent(config.agent_module, config.agent_name)
 
     # Build ADK eval config from our metric configs
-    eval_config = _build_eval_config_from_metrics(config.metrics, config.judge_model)
+    eval_config = _build_eval_config_from_metrics(
+        config.metrics, config.judge_model, config.user_simulator, config.custom_metrics
+    )
     eval_metrics = get_eval_metrics_from_config(eval_config)
 
     all_results: list[EvalRunResult] = []

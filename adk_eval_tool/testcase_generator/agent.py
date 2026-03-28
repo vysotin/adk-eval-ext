@@ -17,6 +17,7 @@ from adk_eval_tool.schemas import (
     Task,
     TaskTrajectorySet,
     TestCaseConfig,
+    TestGenConfig,
 )
 from adk_eval_tool.testcase_generator.prompts import build_testcase_system_instruction
 from adk_eval_tool.testcase_generator.tools import (
@@ -29,13 +30,15 @@ from adk_eval_tool.testcase_generator.tools import (
 def _create_testcase_generator_agent(
     metadata: AgentMetadata,
     config: TestCaseConfig,
+    gen_config: Optional[TestGenConfig] = None,
 ) -> Agent:
     """Create an ADK agent for test case generation."""
+    gen_config = gen_config or TestGenConfig()
     return Agent(
         name="testcase_generator",
-        model=config.judge_model,
+        model=gen_config.judge_model,
         description="Generates ADK-compatible evaluation test cases",
-        instruction=build_testcase_system_instruction(metadata, config),
+        instruction=build_testcase_system_instruction(metadata, config, gen_config),
         tools=[validate_eval_set, save_eval_set],
     )
 
@@ -44,6 +47,7 @@ async def generate_test_cases(
     metadata: AgentMetadata,
     task: Task,
     config: Optional[TestCaseConfig] = None,
+    gen_config: Optional[TestGenConfig] = None,
     save_dir: Optional[str] = None,
 ) -> dict:
     """Generate an ADK EvalSet for a single task.
@@ -58,7 +62,8 @@ async def generate_test_cases(
         Dict in ADK EvalSet JSON format (camelCase).
     """
     config = config or TestCaseConfig()
-    agent = _create_testcase_generator_agent(metadata, config)
+    gen_config = gen_config or TestGenConfig()
+    agent = _create_testcase_generator_agent(metadata, config, gen_config)
 
     session_service = InMemorySessionService()
     runner = Runner(agent=agent, app_name="testcase_gen", session_service=session_service)
@@ -71,7 +76,12 @@ Description: {task.description}
 Base trajectories (happy paths):
 {json.dumps([t.model_dump() for t in task.trajectories], indent=2)}
 
-Generate the complete evalset.json with both happy-path and failure-path test cases.
+Generate {gen_config.num_simulations_per_task} test cases total.
+Scenario types to cover: {', '.join(gen_config.scenario_types)}
+Failure types to simulate: {', '.join(gen_config.failure_types)}
+
+IMPORTANT: In toolResponses, only use fields 'name', 'id', and 'response'. Do NOT include 'error' or other extra fields.
+
 Call validate_eval_set to check your output, then call save_eval_set with the final JSON.
 """
 
@@ -119,11 +129,12 @@ async def generate_all_test_cases(
     metadata: AgentMetadata,
     task_set: TaskTrajectorySet,
     config: Optional[TestCaseConfig] = None,
+    gen_config: Optional[TestGenConfig] = None,
     save_dir: Optional[str] = None,
 ) -> list[dict]:
     """Generate EvalSets for all tasks in a TaskTrajectorySet."""
     results = []
     for task in task_set.tasks:
-        eval_set = await generate_test_cases(metadata, task, config, save_dir)
+        eval_set = await generate_test_cases(metadata, task, config, gen_config, save_dir)
         results.append(eval_set)
     return results

@@ -66,7 +66,7 @@ def _init_session_state():
 def main():
     _init_session_state()
 
-    st.sidebar.title("ADK Eval Tool")
+    st.sidebar.title("Eval Engineering Tool")
 
     # Show loaded agent info in sidebar
     if st.session_state.metadata:

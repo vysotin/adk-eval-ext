@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from adk_eval_tool.schemas import TestCaseConfig
+from adk_eval_tool.schemas import TestCaseConfig, TestGenConfig
 from adk_eval_tool.ui.components.json_editor import json_editor
 
 
@@ -36,29 +36,77 @@ def _render_generate_tab():
         st.warning("Generate tasks first (Tasks & Trajectories page).")
         return
 
-    col1, col2 = st.columns(2)
-    with col1:
-        judge_model = st.selectbox("Judge model", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"])
-        match_type = st.selectbox("Tool trajectory match type", ["IN_ORDER", "EXACT", "ANY_ORDER"])
-    with col2:
-        num_runs = st.number_input("Evaluation runs", min_value=1, max_value=10, value=2)
-        trajectory_threshold = st.slider("Tool trajectory threshold", 0.0, 1.0, 0.8)
-        safety_threshold = st.slider("Safety threshold", 0.0, 1.0, 1.0)
+    # --- User Simulation Parameters ---
+    st.markdown("#### User Simulations")
+    col_sim1, col_sim2 = st.columns(2)
+    with col_sim1:
+        num_simulations = st.number_input(
+            "Simulations per task",
+            min_value=1, max_value=20, value=3,
+            help="Total number of test cases to generate per task",
+            key="tc_num_sims",
+        )
+        judge_model = st.selectbox(
+            "Generator model",
+            ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+            key="tc_judge_model",
+        )
+    with col_sim2:
+        match_type = st.selectbox(
+            "Tool trajectory match type",
+            ["IN_ORDER", "EXACT", "ANY_ORDER"],
+            key="tc_match_type",
+        )
 
-    config = TestCaseConfig(
-        eval_metrics={
-            "tool_trajectory_avg_score": trajectory_threshold,
-            "safety_v1": safety_threshold,
-        },
+    st.markdown("**Scenario types to generate:**")
+    default_scenarios = ["happy_path", "failure_path", "edge_case", "multi_turn"]
+    scenario_types = st.multiselect(
+        "Scenario types",
+        options=["happy_path", "failure_path", "edge_case", "multi_turn", "boundary_value", "concurrent_tool_use"],
+        default=default_scenarios,
+        key="tc_scenario_types",
+        label_visibility="collapsed",
+    )
+
+    st.markdown("**Failure types to simulate:**")
+    default_failures = ["missing_required_input", "invalid_input_format", "tool_error", "ambiguous_request"]
+    failure_types = st.multiselect(
+        "Failure types",
+        options=[
+            "missing_required_input",
+            "invalid_input_format",
+            "tool_error",
+            "ambiguous_request",
+            "unauthorized_access",
+            "timeout",
+            "out_of_scope_request",
+            "partial_input",
+        ],
+        default=default_failures,
+        key="tc_failure_types",
+        label_visibility="collapsed",
+    )
+
+    gen_config = TestGenConfig(
+        num_simulations_per_task=num_simulations,
+        failure_types=failure_types,
+        scenario_types=scenario_types,
         judge_model=judge_model,
-        num_runs=num_runs,
         tool_trajectory_match_type=match_type,
     )
 
-    if st.session_state.task_set is None:
-        st.warning("Generate tasks first (Tasks & Trajectories page).")
-        return
+    config = TestCaseConfig(
+        eval_metrics={
+            "tool_trajectory_avg_score": 0.8,
+            "safety_v1": 1.0,
+        },
+        judge_model=judge_model,
+        tool_trajectory_match_type=match_type,
+    )
 
+    st.divider()
+
+    # --- Task selection ---
     task_set = st.session_state.task_set
     task_options = {t.task_id: t.name for t in task_set.tasks}
     selected = st.multiselect(
@@ -87,6 +135,7 @@ def _render_generate_tab():
                         metadata=st.session_state.metadata,
                         task=task,
                         config=config,
+                        gen_config=gen_config,
                         save_dir=save_dir,
                     ))
                     results.append(eval_set)
