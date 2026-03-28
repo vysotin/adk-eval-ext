@@ -1,0 +1,89 @@
+{
+  "name": "travel_coordinator",
+  "agent_type": "LlmAgent",
+  "description": "A travel planning coordinator that delegates to flight and hotel specialists.",
+  "instruction": "You are a travel planning coordinator. You help users plan trips by coordinating\nflight and hotel bookings.\n\nYour specialists:\n- flight_agent: searches for flights between cities\n- hotel_agent: searches for hotels in a city\n\nWhen a user wants to plan a trip:\n1. Understand their travel requirements (destination, dates, preferences)\n2. Delegate flight search to flight_agent\n3. Delegate hotel search to hotel_agent\n4. Summarize the combined travel plan with total estimated cost\n\nIf the user only needs flights or only needs hotels, delegate to the appropriate specialist.\nAlways be helpful and proactive in suggesting complete travel plans.\n",
+  "model": "gemini-2.0-flash",
+  "tools": [],
+  "sub_agents": [
+    {
+      "name": "flight_agent",
+      "agent_type": "LlmAgent",
+      "description": "Specialist for searching and recommending flights. Delegate to this agent when the user needs flight information.",
+      "instruction": "You are a flight specialist. Use the search_flights tool to find flights.\nWhen presenting results:\n- Show flight ID, airline, times, and price\n- Recommend the best option based on price and convenience\n- Ask for confirmation before proceeding\n",
+      "model": "gemini-2.0-flash",
+      "tools": [
+        {
+          "name": "search_flights",
+          "description": "Search for available flights between two cities.\n\nArgs:\n    origin: Departure city (e.g., \"London\").\n    destination: Arrival city (e.g., \"Paris\").\n    date: Travel date in YYYY-MM-DD format.\n\nReturns:\n    Dictionary with list of available flights.",
+          "parameters_schema": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string"
+              },
+              "destination": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "origin",
+              "destination",
+              "date"
+            ]
+          },
+          "source": "function",
+          "mcp_server_name": null
+        }
+      ],
+      "sub_agents": [],
+      "output_key": null,
+      "disallow_transfer_to_parent": false,
+      "disallow_transfer_to_peers": false
+    },
+    {
+      "name": "hotel_agent",
+      "agent_type": "LlmAgent",
+      "description": "Specialist for searching and recommending hotels. Delegate to this agent when the user needs hotel information.",
+      "instruction": "You are a hotel specialist. Use the search_hotels tool to find hotels.\nWhen presenting results:\n- Show hotel name, price per night, and rating\n- Recommend the best option based on value and rating\n- Ask for confirmation before proceeding\n",
+      "model": "gemini-2.0-flash",
+      "tools": [
+        {
+          "name": "search_hotels",
+          "description": "Search for available hotels in a city.\n\nArgs:\n    city: City name (e.g., \"Paris\").\n    check_in: Check-in date in YYYY-MM-DD format.\n    check_out: Check-out date in YYYY-MM-DD format.\n\nReturns:\n    Dictionary with list of available hotels.",
+          "parameters_schema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "check_in": {
+                "type": "string"
+              },
+              "check_out": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city",
+              "check_in",
+              "check_out"
+            ]
+          },
+          "source": "function",
+          "mcp_server_name": null
+        }
+      ],
+      "sub_agents": [],
+      "output_key": null,
+      "disallow_transfer_to_parent": false,
+      "disallow_transfer_to_peers": false
+    }
+  ],
+  "output_key": null,
+  "disallow_transfer_to_parent": false,
+  "disallow_transfer_to_peers": false
+}

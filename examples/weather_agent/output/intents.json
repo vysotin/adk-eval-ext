@@ -1,0 +1,406 @@
+{
+  "agent_name": "weather_agent",
+  "intents": [
+    {
+      "intent_id": "get_current_weather_happy_path",
+      "name": "Get Current Weather - Happy Path",
+      "description": "Retrieve current weather conditions for a valid city.",
+      "category": "weather_information",
+      "scenarios": [
+        {
+          "scenario_id": "current_weather_valid_city",
+          "name": "Valid City",
+          "description": "User asks for the current weather in a known city.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the weather like in London?",
+              "expected_tool_calls": [
+                "get_weather"
+              ],
+              "expected_tool_args": {
+                "get_weather": {
+                  "city": "London"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "temperature",
+                "condition",
+                "humidity"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Standard query for current weather."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "current_weather_different_city",
+          "name": "Different Valid City",
+          "description": "User asks for the current weather in a different known city.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "Tell me the weather in Tokyo.",
+              "expected_tool_calls": [
+                "get_weather"
+              ],
+              "expected_tool_args": {
+                "get_weather": {
+                  "city": "Tokyo"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "temperature",
+                "condition",
+                "humidity"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Checking a different city."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "get_current_weather_edge_cases",
+      "name": "Get Current Weather - Edge Cases",
+      "description": "Handle edge cases for current weather requests, like unknown cities.",
+      "category": "weather_information",
+      "scenarios": [
+        {
+          "scenario_id": "current_weather_unknown_city",
+          "name": "Unknown City",
+          "description": "User asks for the weather in an unknown city.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the weather like in Atlantis?",
+              "expected_tool_calls": [
+                "get_weather"
+              ],
+              "expected_tool_args": {
+                "get_weather": {
+                  "city": "Atlantis"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "unknown",
+                "city",
+                "not found"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Check how the agent handles an invalid city."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case",
+            "error"
+          ]
+        },
+        {
+          "scenario_id": "current_weather_empty_city",
+          "name": "Empty City",
+          "description": "User asks for current weather without specifying a city.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the weather like?",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "city",
+                "specify",
+                "location"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Check how the agent handles a missing city."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case",
+            "error"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "get_forecast_happy_path",
+      "name": "Get Forecast - Happy Path",
+      "description": "Retrieve weather forecast for a valid city and number of days.",
+      "category": "weather_information",
+      "scenarios": [
+        {
+          "scenario_id": "forecast_valid_city_default_days",
+          "name": "Valid City, Default Days",
+          "description": "User asks for the forecast in a known city without specifying the number of days.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the forecast for New York?",
+              "expected_tool_calls": [
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_forecast": {
+                  "city": "New York",
+                  "days": 3
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "New York",
+                "forecast",
+                "day"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Standard forecast query."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "forecast_valid_city_specified_days",
+          "name": "Valid City, Specified Days",
+          "description": "User asks for the forecast in a known city and specifies the number of days.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "Give me the 5-day forecast for Paris.",
+              "expected_tool_calls": [
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_forecast": {
+                  "city": "Paris",
+                  "days": 5
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "Paris",
+                "forecast",
+                "day"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Forecast query with specified number of days."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "get_forecast_edge_cases",
+      "name": "Get Forecast - Edge Cases",
+      "description": "Handle edge cases for forecast requests, like invalid number of days or unknown cities.",
+      "category": "weather_information",
+      "scenarios": [
+        {
+          "scenario_id": "forecast_invalid_number_of_days",
+          "name": "Invalid Number of Days",
+          "description": "User asks for a forecast for an invalid number of days (outside the 1-7 range).",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the 10-day forecast for London?",
+              "expected_tool_calls": [
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_forecast": {
+                  "city": "London",
+                  "days": 7
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "London",
+                "forecast",
+                "day"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Check how the agent handles an invalid number of days. It should cap to max days."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case",
+            "error"
+          ]
+        },
+        {
+          "scenario_id": "forecast_unknown_city",
+          "name": "Unknown City",
+          "description": "User asks for the forecast in an unknown city.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What's the forecast for Valhalla?",
+              "expected_tool_calls": [
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_forecast": {
+                  "city": "Valhalla",
+                  "days": 3
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "unknown",
+                "city",
+                "not found"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Check how the agent handles an invalid city."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case",
+            "error"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "combined_weather_requests",
+      "name": "Combined Weather Requests",
+      "description": "A user combining both weather and forecast requests.",
+      "category": "weather_information",
+      "scenarios": [
+        {
+          "scenario_id": "current_and_forecast",
+          "name": "Current Weather and Forecast",
+          "description": "User asks for both current weather and a forecast in one turn.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What is the current weather in Berlin and the 3 day forecast?",
+              "expected_tool_calls": [
+                "get_weather",
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_weather": {
+                  "city": "Berlin"
+                },
+                "get_forecast": {
+                  "city": "Berlin",
+                  "days": 3
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "temperature",
+                "condition",
+                "humidity",
+                "forecast",
+                "Berlin"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Combine both current weather and forecast in one request."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "multi_turn",
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "current_and_forecast_different_cities",
+          "name": "Current weather and forecast - different cities",
+          "description": "User asks for current weather in one city, and the forecast for another",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "What is the current weather in Miami and the 5 day forecast for Seattle?",
+              "expected_tool_calls": [
+                "get_weather",
+                "get_forecast"
+              ],
+              "expected_tool_args": {
+                "get_weather": {
+                  "city": "Miami"
+                },
+                "get_forecast": {
+                  "city": "Seattle",
+                  "days": 5
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "temperature",
+                "condition",
+                "humidity",
+                "forecast",
+                "Miami",
+                "Seattle"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Requesting information for different locations."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "multi_turn",
+            "happy_path"
+          ]
+        }
+      ]
+    }
+  ],
+  "generation_context": "Generated test intents and scenarios for a weather agent. Covered happy paths, edge cases, and error scenarios. Included combined weather requests. Every tool is exercised.",
+  "version": "1"
+}

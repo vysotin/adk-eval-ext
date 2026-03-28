@@ -1,0 +1,322 @@
+{
+  "agent_name": "travel_coordinator",
+  "intents": [
+    {
+      "intent_id": "book_flight_only",
+      "name": "Book Flight Only",
+      "description": "Book a flight between two cities on a specific date.",
+      "category": "happy_path",
+      "scenarios": [
+        {
+          "scenario_id": "book_flight_happy_path",
+          "name": "Happy Path Flight Booking",
+          "description": "User provides all necessary information to book a flight.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a flight from London to Paris on 2024-07-01.",
+              "expected_tool_calls": [
+                "flight_agent"
+              ],
+              "expected_tool_args": {
+                "flight_agent": {
+                  "origin": "London",
+                  "destination": "Paris",
+                  "date": "2024-07-01"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "flight",
+                "airline",
+                "2024-07-01"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Standard flight booking request."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "book_flight_missing_date",
+          "name": "Missing Date Flight Booking",
+          "description": "User does not provide a date for the flight.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a flight from London to Paris.",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "date",
+                "when",
+                "specify"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "The agent should ask for the date."
+            },
+            {
+              "user_message": "2024-07-01",
+              "expected_tool_calls": [
+                "flight_agent"
+              ],
+              "expected_tool_args": {
+                "flight_agent": {
+                  "origin": "London",
+                  "destination": "Paris",
+                  "date": "2024-07-01"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "flight",
+                "airline",
+                "2024-07-01"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "The agent books the flight now that date is given."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case",
+            "multi_turn"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "book_hotel_only",
+      "name": "Book Hotel Only",
+      "description": "Book a hotel in a specific city with check-in and check-out dates.",
+      "category": "happy_path",
+      "scenarios": [
+        {
+          "scenario_id": "book_hotel_happy_path",
+          "name": "Happy Path Hotel Booking",
+          "description": "User provides all necessary information to book a hotel.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a hotel in Paris from 2024-07-05 to 2024-07-07.",
+              "expected_tool_calls": [
+                "hotel_agent"
+              ],
+              "expected_tool_args": {
+                "hotel_agent": {
+                  "city": "Paris",
+                  "check_in": "2024-07-05",
+                  "check_out": "2024-07-07"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "hotel",
+                "price",
+                "rating"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Standard hotel booking request."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "book_hotel_invalid_dates",
+          "name": "Invalid Dates Hotel Booking",
+          "description": "User provides invalid check-in/check-out dates.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a hotel in Paris from 2024-07-07 to 2024-07-05.",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "invalid",
+                "check-in",
+                "check-out"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Agent should detect invalid dates and ask for clarification."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "error"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "book_flight_and_hotel",
+      "name": "Book Flight and Hotel",
+      "description": "Book both a flight and a hotel for a trip.",
+      "category": "happy_path",
+      "scenarios": [
+        {
+          "scenario_id": "book_flight_and_hotel_happy_path",
+          "name": "Happy Path Flight and Hotel Booking",
+          "description": "User provides all necessary information for both flight and hotel.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a flight from London to Paris on 2024-07-01 and a hotel in Paris from 2024-07-05 to 2024-07-07.",
+              "expected_tool_calls": [
+                "flight_agent",
+                "hotel_agent"
+              ],
+              "expected_tool_args": {
+                "flight_agent": {
+                  "origin": "London",
+                  "destination": "Paris",
+                  "date": "2024-07-01"
+                },
+                "hotel_agent": {
+                  "city": "Paris",
+                  "check_in": "2024-07-05",
+                  "check_out": "2024-07-07"
+                }
+              },
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "flight",
+                "hotel",
+                "airline",
+                "price",
+                "rating"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "Complete trip booking request."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "happy_path"
+          ]
+        },
+        {
+          "scenario_id": "book_flight_and_hotel_unknown_city",
+          "name": "Unknown City",
+          "description": "User provides an unknown city for either flight or hotel.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I need a flight from London to Atlantis on 2024-07-01 and a hotel in Paris from 2024-07-05 to 2024-07-07.",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "Atlantis",
+                "not found",
+                "invalid"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "The agent should report that Atlantis is not a valid destination."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "error"
+          ]
+        }
+      ]
+    },
+    {
+      "intent_id": "ambiguous_request",
+      "name": "Ambiguous Request",
+      "description": "User provides an ambiguous request that requires clarification.",
+      "category": "edge_case",
+      "scenarios": [
+        {
+          "scenario_id": "ambiguous_request_city_only",
+          "name": "City Only",
+          "description": "User only provides the city and asks for travel arrangements.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I want to go to Paris.",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "flight",
+                "hotel",
+                "dates",
+                "origin"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "The agent should ask for clarification regarding flight/hotel, dates, and origin city."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case"
+          ]
+        },
+        {
+          "scenario_id": "ambiguous_request_dates_only",
+          "name": "Dates Only",
+          "description": "User only provides dates and asks for travel arrangements.",
+          "eval_type": "trajectory",
+          "steps": [
+            {
+              "user_message": "I want to travel from 2024-07-01 to 2024-07-07.",
+              "expected_tool_calls": [],
+              "expected_tool_args": {},
+              "tool_responses": null,
+              "expected_response": "",
+              "expected_response_keywords": [
+                "city",
+                "destination",
+                "origin",
+                "flight",
+                "hotel"
+              ],
+              "intermediate_responses": [],
+              "rubric": null,
+              "notes": "The agent should ask for clarification regarding cities and if they want flight and/or hotels."
+            }
+          ],
+          "conversation_scenario": null,
+          "session_state": null,
+          "tags": [
+            "edge_case"
+          ]
+        }
+      ]
+    }
+  ],
+  "generation_context": "Generated test intents and scenarios for a travel coordinator agent that delegates to flight and hotel specialists. Covered happy paths, edge cases, and error scenarios, ensuring both sub-agents are exercised. Key scenarios included booking flights only, hotels only, and complete trips. Also addressed missing dates and unknown cities.",
+  "version": "1"
+}
