@@ -32,8 +32,8 @@ def render():
 def _render_generate_tab():
     st.subheader("Generate Test Cases")
 
-    if st.session_state.intent_set is None:
-        st.warning("Generate or load intents first (Intents & Scenarios page).")
+    if st.session_state.task_set is None:
+        st.warning("Generate tasks first (Tasks & Trajectories page).")
         return
 
     col1, col2 = st.columns(2)

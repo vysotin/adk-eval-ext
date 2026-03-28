@@ -97,6 +97,24 @@ def _content_to_text(content) -> str:
     return ""
 
 
+import re as _re
+
+
+def _camel_to_snake(name: str) -> str:
+    """Convert camelCase to snake_case."""
+    s = _re.sub(r'([A-Z])', r'_\1', name).lower().lstrip('_')
+    return s
+
+
+def _camel_to_snake_dict(obj):
+    """Recursively convert dict keys from camelCase to snake_case."""
+    if isinstance(obj, dict):
+        return {_camel_to_snake(k): _camel_to_snake_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_camel_to_snake_dict(item) for item in obj]
+    return obj
+
+
 async def run_evaluation(
     config: EvalRunConfig,
     eval_sets: list[dict],
@@ -140,7 +158,11 @@ async def run_evaluation(
     app_name = "eval_app"
 
     for eval_set_dict in eval_sets:
-        eval_set = EvalSet.model_validate(eval_set_dict)
+        # Our eval set dicts use camelCase (evalSetId, evalCases) but ADK's
+        # EvalSet Pydantic model uses snake_case (eval_set_id, eval_cases).
+        # Convert before validation.
+        snake_dict = _camel_to_snake_dict(eval_set_dict)
+        eval_set = EvalSet.model_validate(snake_dict)
 
         eval_sets_manager = InMemoryEvalSetsManager()
         eval_sets_manager.create_eval_set(

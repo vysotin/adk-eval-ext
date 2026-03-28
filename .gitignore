@@ -10,3 +10,5 @@ eval_datasets/
 eval_versions/
 .claude/
 uv.lock
+tests/e2e/screenshots/
+.playwright-cli/
