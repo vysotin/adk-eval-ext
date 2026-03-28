@@ -1,4 +1,4 @@
-"""Prompt templates for the intent/scenario generator agent."""
+"""Prompt templates for the task/trajectory generator agent."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _format_agent_tree(metadata: AgentMetadata, indent: int = 0) -> str:
     return "\n".join(lines)
 
 
-SYSTEM_INSTRUCTION_TEMPLATE = """You are an expert test designer for AI agents. Your job is to analyze an agent's capabilities and generate comprehensive test intents and scenarios.
+SYSTEM_INSTRUCTION_TEMPLATE = """You are an expert test designer for AI agents. Your job is to analyze an agent's capabilities and generate a comprehensive set of tasks and their base (happy-path) trajectories.
 
 ## Agent Under Test
 
@@ -48,7 +48,9 @@ SYSTEM_INSTRUCTION_TEMPLATE = """You are an expert test designer for AI agents. 
 
 ## Your Task
 
-Given the agent metadata above and any user constraints, generate a comprehensive set of intents (user goals) and for each intent, generate detailed test scenarios.
+Given the agent metadata above and any user constraints, generate a set of tasks (user goals the agent can handle) and for each task, define the base trajectory — the expected happy-path tool call sequence.
+
+Only generate base/happy-path trajectories. Failure paths and edge cases will be generated at the test case generation stage.
 
 ## Output Requirements
 
@@ -57,15 +59,14 @@ You MUST output valid JSON matching this exact structure:
 ```json
 {{{{
   "agent_name": "string",
-  "intents": [
+  "tasks": [
     {{{{
-      "intent_id": "string (snake_case)",
+      "task_id": "string (snake_case)",
       "name": "string",
       "description": "string",
-      "category": "string",
-      "scenarios": [
+      "trajectories": [
         {{{{
-          "scenario_id": "string (snake_case)",
+          "trajectory_id": "string (snake_case)",
           "name": "string",
           "description": "string",
           "steps": [
@@ -76,8 +77,7 @@ You MUST output valid JSON matching this exact structure:
               "expected_response_keywords": ["keyword1", "keyword2"],
               "notes": "string"
             }}}}
-          ],
-          "tags": ["happy_path" | "edge_case" | "error" | "multi_turn"]
+          ]
         }}}}
       ]
     }}}}
@@ -88,19 +88,15 @@ You MUST output valid JSON matching this exact structure:
 
 ## Guidelines
 
-1. **Intent Coverage**: Identify ALL distinct user intents the agent can handle, including:
-   - Primary happy-path intents
-   - Edge cases (missing info, ambiguous input, boundary values)
-   - Error scenarios (invalid input, tool failures, unauthorized access)
-   - Multi-turn conversations requiring clarification
+1. **Task Coverage**: Identify ALL distinct user tasks the agent can handle — every meaningful action a user would ask for.
 
-2. **Scenario Design**: For each intent, create scenarios that:
-   - Exercise different tool combinations
-   - Cover sub-agent delegation paths
-   - Test the full trajectory (which tools in what order)
-   - Include realistic user messages
+2. **Trajectory Design**: For each task, define the base happy-path trajectory:
+   - The expected sequence of tool calls
+   - Realistic user messages
+   - Expected tool arguments
+   - Only the successful/normal flow
 
-3. **Tool Coverage**: Ensure every tool and sub-agent is exercised by at least one scenario.
+3. **Tool Coverage**: Ensure every tool and sub-agent is exercised by at least one trajectory.
 
 4. Use the `save_output` tool to save your final output.
 """

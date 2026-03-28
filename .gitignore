@@ -8,3 +8,5 @@ eval_traces.db
 eval_results/
 eval_datasets/
 eval_versions/
+.claude/
+uv.lock

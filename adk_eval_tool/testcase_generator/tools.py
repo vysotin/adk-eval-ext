@@ -7,44 +7,44 @@ from typing import Any
 
 
 def build_eval_case_json(
-    scenario: dict[str, Any],
-    intent_id: str,
+    trajectory: dict[str, Any],
+    task_id: str,
 ) -> dict[str, Any]:
-    """Build an ADK EvalCase JSON object from a scenario.
+    """Build an ADK EvalCase JSON object from a trajectory.
 
     Handles both trajectory-based (static) and conversation_scenario (dynamic)
-    eval types. For trajectory-based scenarios, maps ScenarioStep fields to ADK
+    eval types. For trajectory-based cases, maps TrajectoryStep fields to ADK
     Invocation structure including toolUses, toolResponses, intermediateResponses,
     finalResponse, and per-invocation rubrics.
 
     Args:
-        scenario: A scenario dict with scenario_id, steps, eval_type, etc.
-        intent_id: The parent intent ID.
+        trajectory: A trajectory dict with trajectory_id, steps, eval_type, etc.
+        task_id: The parent task ID.
 
     Returns:
         An EvalCase dict in ADK camelCase format.
     """
-    scenario_id = scenario.get("scenario_id", "unknown")
-    eval_id = f"{intent_id}__{scenario_id}"
-    eval_type = scenario.get("eval_type", "trajectory")
+    trajectory_id = trajectory.get("trajectory_id", "unknown")
+    eval_id = f"{task_id}__{trajectory_id}"
+    eval_type = trajectory.get("eval_type", "trajectory")
 
     # Dynamic conversation_scenario mode
-    if eval_type == "conversation_scenario" and scenario.get("conversation_scenario"):
+    if eval_type == "conversation_scenario" and trajectory.get("conversation_scenario"):
         eval_case: dict[str, Any] = {
             "evalId": eval_id,
-            "conversation_scenario": scenario["conversation_scenario"],
+            "conversation_scenario": trajectory["conversation_scenario"],
         }
-        if scenario.get("session_state"):
+        if trajectory.get("session_state"):
             eval_case["sessionInput"] = {
                 "appName": "eval_app",
                 "userId": "test_user",
-                "state": scenario["session_state"],
+                "state": trajectory["session_state"],
             }
         return eval_case
 
     # Static trajectory mode
     conversation = []
-    for i, step in enumerate(scenario.get("steps", [])):
+    for i, step in enumerate(trajectory.get("steps", [])):
         # Build toolUses with args
         tool_uses = []
         for tool_name in step.get("expected_tool_calls", []):
@@ -111,38 +111,38 @@ def build_eval_case_json(
     }
 
     # Add session state if present
-    if scenario.get("session_state"):
+    if trajectory.get("session_state"):
         eval_case["sessionInput"] = {
             "appName": "eval_app",
             "userId": "test_user",
-            "state": scenario["session_state"],
+            "state": trajectory["session_state"],
         }
 
     return eval_case
 
 
 def build_eval_set_json(
-    intent: dict[str, Any],
+    task: dict[str, Any],
     agent_name: str,
 ) -> dict[str, Any]:
-    """Build a complete ADK EvalSet JSON from an intent.
+    """Build a complete ADK EvalSet JSON from a task.
 
     Args:
-        intent: An intent dict with intent_id, scenarios, etc.
+        task: A task dict with task_id, trajectories, etc.
         agent_name: The name of the agent being tested.
 
     Returns:
         An EvalSet dict in ADK camelCase format.
     """
-    intent_id = intent.get("intent_id", "unknown")
+    task_id = task.get("task_id", "unknown")
     eval_cases = []
-    for scenario in intent.get("scenarios", []):
-        eval_cases.append(build_eval_case_json(scenario, intent_id))
+    for trajectory in task.get("trajectories", []):
+        eval_cases.append(build_eval_case_json(trajectory, task_id))
 
     return {
-        "evalSetId": f"{agent_name}__{intent_id}",
-        "name": intent.get("name", intent_id),
-        "description": intent.get("description", ""),
+        "evalSetId": f"{agent_name}__{task_id}",
+        "name": task.get("name", task_id),
+        "description": task.get("description", ""),
         "evalCases": eval_cases,
     }
 

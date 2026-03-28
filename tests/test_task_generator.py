@@ -1,19 +1,19 @@
-"""Tests for intent/scenario generator agent."""
+"""Tests for task/trajectory generator agent."""
 
 import json
 import pytest
-from adk_eval_tool.intent_generator.prompts import build_system_instruction
-from adk_eval_tool.intent_generator.tools import (
-    validate_intent_output,
+from adk_eval_tool.task_generator.prompts import build_system_instruction
+from adk_eval_tool.task_generator.tools import (
+    validate_task_output,
     format_agent_metadata_summary,
 )
 from adk_eval_tool.schemas import (
     AgentMetadata,
     ToolMetadata,
-    IntentScenarioSet,
-    Intent,
-    Scenario,
-    ScenarioStep,
+    TaskTrajectorySet,
+    Task,
+    Trajectory,
+    TrajectoryStep,
 )
 
 
@@ -59,20 +59,20 @@ def test_format_agent_metadata_summary():
     assert "payment_agent" in summary
 
 
-def test_validate_intent_output_valid():
-    intent_set = IntentScenarioSet(
+def test_validate_task_output_valid():
+    task_set = TaskTrajectorySet(
         agent_name="travel_agent",
-        intents=[
-            Intent(
-                intent_id="book_flight",
+        tasks=[
+            Task(
+                task_id="book_flight",
                 name="Book Flight",
                 description="User wants to book a flight",
-                scenarios=[
-                    Scenario(
-                        scenario_id="happy_path",
+                trajectories=[
+                    Trajectory(
+                        trajectory_id="happy_path",
                         name="Successful booking",
                         steps=[
-                            ScenarioStep(
+                            TrajectoryStep(
                                 user_message="Book a flight to London",
                                 expected_tool_calls=["search_flights"],
                             )
@@ -82,11 +82,11 @@ def test_validate_intent_output_valid():
             )
         ],
     )
-    result = validate_intent_output(intent_set.model_dump())
+    result = validate_task_output(task_set.model_dump())
     assert result["valid"] is True
 
 
-def test_validate_intent_output_invalid():
-    result = validate_intent_output({"bad": "data"})
+def test_validate_task_output_invalid():
+    result = validate_task_output({"bad": "data"})
     assert result["valid"] is False
     assert "errors" in result

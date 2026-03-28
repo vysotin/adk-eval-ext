@@ -34,8 +34,8 @@ def _init_session_state():
     """Initialize session state with defaults and any pre-loaded data."""
     if "metadata" not in st.session_state:
         st.session_state.metadata = None
-    if "intent_set" not in st.session_state:
-        st.session_state.intent_set = None
+    if "task_set" not in st.session_state:
+        st.session_state.task_set = None
     if "eval_sets" not in st.session_state:
         st.session_state.eval_sets = []
     if "eval_run_config" not in st.session_state:
@@ -82,7 +82,7 @@ def main():
         "Navigation",
         [
             "Agent Metadata",
-            "Intents & Scenarios",
+            "Tasks & Trajectories",
             "Test Cases",
             "Eval Config",
             "Run Evaluation",
@@ -94,8 +94,8 @@ def main():
     if page == "Agent Metadata":
         from adk_eval_tool.ui.pages.metadata_viewer import render
         render()
-    elif page == "Intents & Scenarios":
-        from adk_eval_tool.ui.pages.intent_manager import render
+    elif page == "Tasks & Trajectories":
+        from adk_eval_tool.ui.pages.task_manager import render
         render()
     elif page == "Test Cases":
         from adk_eval_tool.ui.pages.testcase_manager import render

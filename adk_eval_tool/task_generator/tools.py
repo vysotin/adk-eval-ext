@@ -1,4 +1,4 @@
-"""Function tools for the intent/scenario generator agent."""
+"""Function tools for the task/trajectory generator agent."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from adk_eval_tool.schemas import AgentMetadata, IntentScenarioSet
+from adk_eval_tool.schemas import AgentMetadata, TaskTrajectorySet
 
 
 def format_agent_metadata_summary(metadata: AgentMetadata) -> str:
@@ -29,17 +29,17 @@ def format_agent_metadata_summary(metadata: AgentMetadata) -> str:
     return "\n".join(lines)
 
 
-def validate_intent_output(data: dict[str, Any]) -> dict[str, Any]:
-    """Validate that generated output matches IntentScenarioSet schema.
+def validate_task_output(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate that generated output matches TaskTrajectorySet schema.
 
     Args:
-        data: The generated intent/scenario data as a dict.
+        data: The generated task/trajectory data as a dict.
 
     Returns:
         Dict with 'valid' bool and optional 'errors' list.
     """
     try:
-        IntentScenarioSet.model_validate(data)
+        TaskTrajectorySet.model_validate(data)
         return {"valid": True, "errors": []}
     except ValidationError as e:
         return {
@@ -49,10 +49,10 @@ def validate_intent_output(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_output(output_json: str) -> str:
-    """Save the final intent/scenario output. Called by the agent when done.
+    """Save the final task/trajectory output. Called by the agent when done.
 
     Args:
-        output_json: The complete JSON string of the IntentScenarioSet.
+        output_json: The complete JSON string of the TaskTrajectorySet.
 
     Returns:
         Validation result message.
@@ -62,7 +62,7 @@ def save_output(output_json: str) -> str:
     except json.JSONDecodeError as e:
         return f"Invalid JSON: {e}"
 
-    validation = validate_intent_output(data)
+    validation = validate_task_output(data)
     if validation["valid"]:
         return "Output validated successfully."
     else:

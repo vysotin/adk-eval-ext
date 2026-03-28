@@ -11,9 +11,9 @@ from adk_eval_tool.testcase_generator.prompts import build_testcase_system_instr
 from adk_eval_tool.schemas import (
     AgentMetadata,
     ToolMetadata,
-    Intent,
-    Scenario,
-    ScenarioStep,
+    Task,
+    Trajectory,
+    TrajectoryStep,
     TestCaseConfig,
 )
 
@@ -32,18 +32,17 @@ def _sample_metadata() -> AgentMetadata:
     )
 
 
-def _sample_intent() -> Intent:
-    return Intent(
-        intent_id="book_flight",
+def _sample_task() -> Task:
+    return Task(
+        task_id="book_flight",
         name="Book Flight",
         description="User books a flight",
-        category="booking",
-        scenarios=[
-            Scenario(
-                scenario_id="happy_path",
+        trajectories=[
+            Trajectory(
+                trajectory_id="happy_path",
                 name="Successful booking",
                 steps=[
-                    ScenarioStep(
+                    TrajectoryStep(
                         user_message="Find flights to London tomorrow",
                         expected_tool_calls=["search_flights"],
                         expected_tool_args={"search_flights": {"destination": "London"}},
@@ -52,7 +51,7 @@ def _sample_intent() -> Intent:
                         expected_response_keywords=["London", "flight"],
                         rubric="Agent should present flight options clearly.",
                     ),
-                    ScenarioStep(
+                    TrajectoryStep(
                         user_message="Book the cheapest one",
                         expected_tool_calls=["search_flights"],
                         expected_response_keywords=["booked"],
@@ -64,10 +63,10 @@ def _sample_intent() -> Intent:
 
 
 def test_build_eval_case_json_structure():
-    scenario = _sample_intent().scenarios[0]
+    trajectory = _sample_task().trajectories[0]
     eval_case = build_eval_case_json(
-        scenario=scenario.model_dump(),
-        intent_id="book_flight",
+        trajectory=trajectory.model_dump(),
+        task_id="book_flight",
     )
     assert eval_case["evalId"] == "book_flight__happy_path"
     assert "conversation" in eval_case
@@ -83,8 +82,8 @@ def test_build_eval_case_json_structure():
 
 
 def test_build_eval_case_conversation_scenario():
-    scenario = Scenario(
-        scenario_id="dynamic_test",
+    trajectory = Trajectory(
+        trajectory_id="dynamic_test",
         name="Dynamic test",
         eval_type="conversation_scenario",
         conversation_scenario={
@@ -94,8 +93,8 @@ def test_build_eval_case_conversation_scenario():
         session_state={"user_id": "test_123"},
     )
     eval_case = build_eval_case_json(
-        scenario=scenario.model_dump(),
-        intent_id="book_flight",
+        trajectory=trajectory.model_dump(),
+        task_id="book_flight",
     )
     assert eval_case["evalId"] == "book_flight__dynamic_test"
     assert "conversation_scenario" in eval_case
@@ -104,9 +103,9 @@ def test_build_eval_case_conversation_scenario():
 
 
 def test_build_eval_set_json():
-    intent = _sample_intent()
+    task = _sample_task()
     eval_set = build_eval_set_json(
-        intent=intent.model_dump(),
+        task=task.model_dump(),
         agent_name="travel_agent",
     )
     assert eval_set["evalSetId"] == "travel_agent__book_flight"
@@ -114,8 +113,8 @@ def test_build_eval_set_json():
 
 
 def test_validate_eval_set_valid():
-    intent = _sample_intent()
-    eval_set = build_eval_set_json(intent=intent.model_dump(), agent_name="travel_agent")
+    task = _sample_task()
+    eval_set = build_eval_set_json(task=task.model_dump(), agent_name="travel_agent")
     result = validate_eval_set(json.dumps(eval_set))
     assert result["valid"] is True
 

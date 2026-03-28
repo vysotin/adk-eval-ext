@@ -17,7 +17,7 @@ def render():
     st.header("Test Cases (EvalSets)")
 
     if st.session_state.metadata is None:
-        st.warning("Load agent metadata first.")
+        st.warning("No agent loaded. Launch with: `python -m adk_eval_tool <module> <variable>`")
         return
 
     tab_gen, tab_edit = st.tabs(["Generate", "View / Edit"])
@@ -55,12 +55,16 @@ def _render_generate_tab():
         tool_trajectory_match_type=match_type,
     )
 
-    intent_set = st.session_state.intent_set
-    intent_options = {i.intent_id: i.name for i in intent_set.intents}
+    if st.session_state.task_set is None:
+        st.warning("Generate tasks first (Tasks & Trajectories page).")
+        return
+
+    task_set = st.session_state.task_set
+    task_options = {t.task_id: t.name for t in task_set.tasks}
     selected = st.multiselect(
-        "Generate for intents (all if empty)",
-        options=list(intent_options.keys()),
-        format_func=lambda x: f"{x} -- {intent_options[x]}",
+        "Generate for tasks (all if empty)",
+        options=list(task_options.keys()),
+        format_func=lambda x: f"{x} -- {task_options[x]}",
     )
 
     save_dir = st.text_input("Save directory", value="eval_datasets")
@@ -69,26 +73,26 @@ def _render_generate_tab():
         with st.spinner("Generating evaluation datasets..."):
             from adk_eval_tool.testcase_generator import generate_test_cases
 
-            intents_to_process = (
-                [i for i in intent_set.intents if i.intent_id in selected]
+            tasks_to_process = (
+                [t for t in task_set.tasks if t.task_id in selected]
                 if selected
-                else intent_set.intents
+                else task_set.tasks
             )
 
             results = []
             progress = st.progress(0)
-            for idx, intent in enumerate(intents_to_process):
+            for idx, task in enumerate(tasks_to_process):
                 try:
                     eval_set = asyncio.run(generate_test_cases(
                         metadata=st.session_state.metadata,
-                        intent=intent,
+                        task=task,
                         config=config,
                         save_dir=save_dir,
                     ))
                     results.append(eval_set)
                 except Exception as e:
-                    st.error(f"Failed for intent {intent.intent_id}: {e}")
-                progress.progress((idx + 1) / len(intents_to_process))
+                    st.error(f"Failed for task {task.task_id}: {e}")
+                progress.progress((idx + 1) / len(tasks_to_process))
 
             st.session_state.eval_sets = results
             st.success(f"Generated {len(results)} eval sets")

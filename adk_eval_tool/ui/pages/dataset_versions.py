@@ -30,7 +30,7 @@ def render():
 def _render_create_version():
     st.subheader("Create New Version")
 
-    if not st.session_state.eval_sets and not st.session_state.intent_set:
+    if not st.session_state.eval_sets and not st.session_state.task_set:
         st.warning("No data to version. Generate metadata, intents, or test cases first.")
         return
 
@@ -51,9 +51,9 @@ def _render_create_version():
                 st.session_state.metadata.model_dump_json(indent=2)
             )
 
-        if st.session_state.intent_set:
-            (version_path / "intents.json").write_text(
-                st.session_state.intent_set.model_dump_json(indent=2)
+        if st.session_state.task_set:
+            (version_path / "tasks.json").write_text(
+                st.session_state.task_set.model_dump_json(indent=2)
             )
 
         src = Path(source_dir)
@@ -77,7 +77,7 @@ def _render_create_version():
             "created_at": datetime.now().isoformat(),
             "notes": version_notes,
             "agent_name": st.session_state.metadata.name if st.session_state.metadata else None,
-            "num_intents": len(st.session_state.intent_set.intents) if st.session_state.intent_set else 0,
+            "num_tasks": len(st.session_state.task_set.tasks) if st.session_state.task_set else 0,
             "num_eval_sets": len(st.session_state.eval_sets),
         }
         (version_path / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -134,7 +134,7 @@ def _render_browse_versions():
 
 def _load_version(version_dir: Path):
     """Load a version's data into session state."""
-    from adk_eval_tool.schemas import AgentMetadata, IntentScenarioSet
+    from adk_eval_tool.schemas import AgentMetadata, TaskTrajectorySet
 
     meta_file = version_dir / "metadata.json"
     if meta_file.exists():
@@ -142,10 +142,10 @@ def _load_version(version_dir: Path):
             json.loads(meta_file.read_text())
         )
 
-    intents_file = version_dir / "intents.json"
-    if intents_file.exists():
-        st.session_state.intent_set = IntentScenarioSet.model_validate(
-            json.loads(intents_file.read_text())
+    tasks_file = version_dir / "tasks.json"
+    if tasks_file.exists():
+        st.session_state.task_set = TaskTrajectorySet.model_validate(
+            json.loads(tasks_file.read_text())
         )
 
     evalsets_dir = version_dir / "evalsets"

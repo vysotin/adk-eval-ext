@@ -2,10 +2,10 @@ import json
 from adk_eval_tool.schemas import (
     ToolMetadata,
     AgentMetadata,
-    Intent,
-    Scenario,
-    ScenarioStep,
-    IntentScenarioSet,
+    Task,
+    Trajectory,
+    TrajectoryStep,
+    TaskTrajectorySet,
     TestCaseConfig,
     EvalRunConfig,
     MetricConfig,
@@ -75,8 +75,8 @@ def test_agent_metadata_serialization_roundtrip():
     assert restored.name == meta.name
 
 
-def test_scenario_step():
-    step = ScenarioStep(
+def test_trajectory_step():
+    step = TrajectoryStep(
         user_message="Book a flight to London",
         expected_tool_calls=["search_flights", "book_flight"],
         expected_tool_args={"search_flights": {"destination": "London"}},
@@ -91,9 +91,9 @@ def test_scenario_step():
     assert step.rubric is not None
 
 
-def test_scenario_conversation_scenario_type():
-    scenario = Scenario(
-        scenario_id="dynamic_refund",
+def test_trajectory_conversation_scenario_type():
+    traj = Trajectory(
+        trajectory_id="dynamic_refund",
         name="Dynamic refund flow",
         eval_type="conversation_scenario",
         conversation_scenario={
@@ -101,52 +101,48 @@ def test_scenario_conversation_scenario_type():
             "conversation_plan": "Provide order ID when asked. Confirm refund. Signal completion.",
         },
         session_state={"user_tier": "premium"},
-        tags=["dynamic", "multi_turn"],
     )
-    assert scenario.eval_type == "conversation_scenario"
-    assert scenario.conversation_scenario is not None
-    assert scenario.session_state["user_tier"] == "premium"
+    assert traj.eval_type == "conversation_scenario"
+    assert traj.conversation_scenario is not None
+    assert traj.session_state["user_tier"] == "premium"
 
 
-def test_intent_with_scenarios():
-    scenario = Scenario(
-        scenario_id="book_flight_happy",
+def test_task_with_trajectories():
+    traj = Trajectory(
+        trajectory_id="book_flight_happy",
         name="Successful flight booking",
         description="User books a flight successfully",
         steps=[
-            ScenarioStep(
+            TrajectoryStep(
                 user_message="Book a flight to London tomorrow",
                 expected_tool_calls=["search_flights"],
             )
         ],
-        tags=["happy_path"],
     )
-    intent = Intent(
-        intent_id="book_flight",
+    task = Task(
+        task_id="book_flight",
         name="Book Flight",
         description="User wants to book a flight",
-        category="booking",
-        scenarios=[scenario],
+        trajectories=[traj],
     )
-    assert intent.intent_id == "book_flight"
-    assert len(intent.scenarios) == 1
+    assert task.task_id == "book_flight"
+    assert len(task.trajectories) == 1
 
 
-def test_intent_scenario_set():
-    intent_set = IntentScenarioSet(
+def test_task_trajectory_set():
+    task_set = TaskTrajectorySet(
         agent_name="travel_agent",
-        intents=[
-            Intent(
-                intent_id="book_flight",
+        tasks=[
+            Task(
+                task_id="book_flight",
                 name="Book Flight",
                 description="Book a flight",
-                category="booking",
-                scenarios=[],
+                trajectories=[],
             )
         ],
         generation_context="Testing travel agent",
     )
-    assert intent_set.agent_name == "travel_agent"
+    assert task_set.agent_name == "travel_agent"
 
 
 def test_testcase_config():
@@ -204,8 +200,8 @@ def test_trace_span_node():
 def test_eval_run_result():
     result = EvalRunResult(
         run_id="run-123",
-        eval_set_id="agent__intent",
-        eval_id="intent__scenario",
+        eval_set_id="agent__task",
+        eval_id="task__trajectory",
         status="PASSED",
         overall_scores={"tool_trajectory_avg_score": 0.95, "safety_v1": 1.0},
         per_invocation_scores=[

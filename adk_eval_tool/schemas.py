@@ -37,14 +37,13 @@ class AgentMetadata(BaseModel):
 # --- Intents & Scenarios ---
 
 
-class ScenarioStep(BaseModel):
-    """A single conversation turn in a scenario.
+class TrajectoryStep(BaseModel):
+    """A single conversation turn in a trajectory.
 
-    Models a full ADK Invocation: user message -> tool trajectory -> response.
-    For trajectory-based evals, expected_tool_calls and expected_tool_args
-    define the expected tool use sequence. tool_responses provides reference
-    data for hallucination metrics. intermediate_responses captures expected
-    agent reasoning between tool calls.
+    Models a full ADK Invocation: user message -> tool calls -> response.
+    expected_tool_calls and expected_tool_args define the expected tool use
+    sequence. tool_responses provides reference data for hallucination metrics.
+    intermediate_responses captures expected agent reasoning between tool calls.
     """
 
     user_message: str
@@ -58,8 +57,12 @@ class ScenarioStep(BaseModel):
     notes: str = ""
 
 
-class Scenario(BaseModel):
-    """A multi-turn test scenario for a specific intent.
+class Trajectory(BaseModel):
+    """A base trajectory (happy path) for a task.
+
+    Defines the expected tool call sequence for a single user task.
+    Only base/happy-path trajectories are stored in metadata. Failure paths
+    and edge cases are generated at the test case generation stage.
 
     Supports two modes matching ADK's EvalCase:
     - Static trajectory: steps[] defines fixed conversation turns (maps to ADK 'conversation')
@@ -67,31 +70,29 @@ class Scenario(BaseModel):
       (maps to ADK 'conversation_scenario' with user simulator)
     """
 
-    scenario_id: str
+    trajectory_id: str
     name: str
     description: str = ""
     eval_type: str = "trajectory"  # "trajectory" | "conversation_scenario"
-    steps: list[ScenarioStep] = Field(default_factory=list)
+    steps: list[TrajectoryStep] = Field(default_factory=list)
     conversation_scenario: Optional[dict[str, str]] = None
     session_state: Optional[dict[str, Any]] = None
-    tags: list[str] = Field(default_factory=list)
 
 
-class Intent(BaseModel):
-    """A user intent with associated test scenarios."""
+class Task(BaseModel):
+    """A user task with associated base trajectories."""
 
-    intent_id: str
+    task_id: str
     name: str
     description: str
-    category: str = ""
-    scenarios: list[Scenario] = Field(default_factory=list)
+    trajectories: list[Trajectory] = Field(default_factory=list)
 
 
-class IntentScenarioSet(BaseModel):
-    """Complete set of intents and scenarios for an agent."""
+class TaskTrajectorySet(BaseModel):
+    """Complete set of tasks and trajectories for an agent."""
 
     agent_name: str
-    intents: list[Intent] = Field(default_factory=list)
+    tasks: list[Task] = Field(default_factory=list)
     generation_context: str = ""
     version: str = "1"
 

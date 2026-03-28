@@ -14,8 +14,8 @@ from google.genai import types
 
 from adk_eval_tool.schemas import (
     AgentMetadata,
-    Intent,
-    IntentScenarioSet,
+    Task,
+    TaskTrajectorySet,
     TestCaseConfig,
 )
 from adk_eval_tool.testcase_generator.prompts import build_testcase_system_instruction
@@ -42,15 +42,15 @@ def _create_testcase_generator_agent(
 
 async def generate_test_cases(
     metadata: AgentMetadata,
-    intent: Intent,
+    task: Task,
     config: Optional[TestCaseConfig] = None,
     save_dir: Optional[str] = None,
 ) -> dict:
-    """Generate an ADK EvalSet for a single intent.
+    """Generate an ADK EvalSet for a single task.
 
     Args:
         metadata: Agent metadata.
-        intent: The intent to generate test cases for.
+        task: The task to generate test cases for.
         config: Evaluation config (metrics, thresholds, judge model).
         save_dir: Optional directory to save the .evalset.json file.
 
@@ -63,16 +63,16 @@ async def generate_test_cases(
     session_service = InMemorySessionService()
     runner = Runner(agent=agent, app_name="testcase_gen", session_service=session_service)
 
-    prompt = f"""Generate an ADK EvalSet for this intent:
+    prompt = f"""Generate an ADK EvalSet for this task:
 
-Intent: {intent.name} ({intent.intent_id})
-Description: {intent.description}
-Category: {intent.category}
+Task: {task.name} ({task.task_id})
+Description: {task.description}
 
-Scenarios:
-{json.dumps([s.model_dump() for s in intent.scenarios], indent=2)}
+Base trajectories (happy paths):
+{json.dumps([t.model_dump() for t in task.trajectories], indent=2)}
 
-Generate the complete evalset.json. Call validate_eval_set to check your output, then call save_eval_set with the final JSON.
+Generate the complete evalset.json with both happy-path and failure-path test cases.
+Call validate_eval_set to check your output, then call save_eval_set with the final JSON.
 """
 
     session = await session_service.create_session(app_name="testcase_gen", user_id="generator")
@@ -89,18 +89,18 @@ Generate the complete evalset.json. Call validate_eval_set to check your output,
                 if hasattr(part, "text") and part.text:
                     final_text = part.text
 
-    eval_set = _extract_eval_set(final_text, metadata.name, intent)
+    eval_set = _extract_eval_set(final_text, metadata.name, task)
 
     if save_dir:
         path = Path(save_dir)
         path.mkdir(parents=True, exist_ok=True)
-        filename = f"{metadata.name}__{intent.intent_id}.evalset.json"
+        filename = f"{metadata.name}__{task.task_id}.evalset.json"
         (path / filename).write_text(json.dumps(eval_set, indent=2))
 
     return eval_set
 
 
-def _extract_eval_set(text: str, agent_name: str, intent: Intent) -> dict:
+def _extract_eval_set(text: str, agent_name: str, task: Task) -> dict:
     """Extract EvalSet JSON from agent output, with fallback to programmatic build."""
     json_match = re.search(r'\{[\s\S]*\}', text)
     if json_match:
@@ -112,18 +112,18 @@ def _extract_eval_set(text: str, agent_name: str, intent: Intent) -> dict:
         except (json.JSONDecodeError, Exception):
             pass
 
-    return build_eval_set_json(intent.model_dump(), agent_name)
+    return build_eval_set_json(task.model_dump(), agent_name)
 
 
 async def generate_all_test_cases(
     metadata: AgentMetadata,
-    intent_set: IntentScenarioSet,
+    task_set: TaskTrajectorySet,
     config: Optional[TestCaseConfig] = None,
     save_dir: Optional[str] = None,
 ) -> list[dict]:
-    """Generate EvalSets for all intents in an IntentScenarioSet."""
+    """Generate EvalSets for all tasks in a TaskTrajectorySet."""
     results = []
-    for intent in intent_set.intents:
-        eval_set = await generate_test_cases(metadata, intent, config, save_dir)
+    for task in task_set.tasks:
+        eval_set = await generate_test_cases(metadata, task, config, save_dir)
         results.append(eval_set)
     return results
