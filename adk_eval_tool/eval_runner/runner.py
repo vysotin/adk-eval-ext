@@ -115,6 +115,53 @@ def _camel_to_snake_dict(obj):
     return obj
 
 
+# Fields that ADK's Pydantic models accept (extras are forbidden).
+_FUNCTION_RESPONSE_FIELDS = {"will_continue", "scheduling", "parts", "id", "name", "response"}
+_FUNCTION_CALL_FIELDS = {"id", "args", "name", "partial_args", "will_continue"}
+
+
+def _sanitize_eval_set(data: dict) -> dict:
+    """Remove fields that ADK's strict Pydantic models reject.
+
+    LLM-generated eval sets may include extra fields in tool_responses
+    (e.g. 'error') or tool_uses that FunctionResponse/FunctionCall don't allow.
+    """
+    for case in data.get("eval_cases", []):
+        for inv in case.get("conversation", []):
+            idata = inv.get("intermediate_data")
+            if not idata:
+                continue
+
+            # Sanitize tool_responses — strip unknown fields
+            if "tool_responses" in idata:
+                sanitized = []
+                for tr in idata["tool_responses"]:
+                    if isinstance(tr, dict):
+                        clean = {k: v for k, v in tr.items() if k in _FUNCTION_RESPONSE_FIELDS}
+                        # Must have at least 'name' and 'response'
+                        if "name" in clean:
+                            clean.setdefault("response", {})
+                            sanitized.append(clean)
+                    else:
+                        sanitized.append(tr)
+                idata["tool_responses"] = sanitized
+
+            # Sanitize tool_uses — strip unknown fields
+            if "tool_uses" in idata:
+                sanitized = []
+                for tu in idata["tool_uses"]:
+                    if isinstance(tu, dict):
+                        clean = {k: v for k, v in tu.items() if k in _FUNCTION_CALL_FIELDS}
+                        if "name" in clean:
+                            clean.setdefault("args", {})
+                            sanitized.append(clean)
+                    else:
+                        sanitized.append(tu)
+                idata["tool_uses"] = sanitized
+
+    return data
+
+
 async def run_evaluation(
     config: EvalRunConfig,
     eval_sets: list[dict],
@@ -160,8 +207,10 @@ async def run_evaluation(
     for eval_set_dict in eval_sets:
         # Our eval set dicts use camelCase (evalSetId, evalCases) but ADK's
         # EvalSet Pydantic model uses snake_case (eval_set_id, eval_cases).
-        # Convert before validation.
+        # Convert before validation and sanitize LLM-generated fields that
+        # ADK's strict Pydantic models don't accept (e.g. 'error' in toolResponses).
         snake_dict = _camel_to_snake_dict(eval_set_dict)
+        snake_dict = _sanitize_eval_set(snake_dict)
         eval_set = EvalSet.model_validate(snake_dict)
 
         eval_sets_manager = InMemoryEvalSetsManager()
