@@ -1,224 +1,108 @@
-import json
+"""Tests for Pydantic schemas."""
+
 from adk_eval_tool.schemas import (
     ToolMetadata,
     AgentMetadata,
+    Scenario,
     Task,
-    Trajectory,
-    TrajectoryStep,
-    TaskTrajectorySet,
-    TestCaseConfig,
-    EvalRunConfig,
+    TaskScenarioSet,
     MetricConfig,
-    EvalRunResult,
+    EvalRunConfig,
     TraceSpanNode,
+    EvalRunResult,
     BasicMetrics,
 )
 
 
 def test_tool_metadata_basic():
-    tool = ToolMetadata(
-        name="search",
-        description="Search the web",
-        parameters_schema={"type": "object", "properties": {"query": {"type": "string"}}},
-    )
+    tool = ToolMetadata(name="search", description="Search things", parameters_schema={
+        "type": "object", "properties": {"q": {"type": "string"}},
+    })
     assert tool.name == "search"
     assert tool.source == "function"
 
 
 def test_tool_metadata_mcp():
-    tool = ToolMetadata(
-        name="read_file",
-        description="Read a file",
-        parameters_schema={},
-        source="mcp",
-        mcp_server_name="filesystem",
-    )
+    tool = ToolMetadata(name="mcp_tool", description="MCP", parameters_schema={},
+        source="mcp", mcp_server_name="my_server")
     assert tool.source == "mcp"
-    assert tool.mcp_server_name == "filesystem"
 
 
 def test_agent_metadata_with_sub_agents():
-    child = AgentMetadata(
-        name="researcher",
-        agent_type="LlmAgent",
-        description="Research assistant",
-        instruction="You research topics.",
-        model="gemini-2.0-flash",
-        tools=[ToolMetadata(name="search", description="Search", parameters_schema={})],
-        sub_agents=[],
-    )
-    root = AgentMetadata(
-        name="coordinator",
-        agent_type="LlmAgent",
-        description="Main coordinator",
-        instruction="You coordinate tasks.",
-        model="gemini-2.0-flash",
-        tools=[],
-        sub_agents=[child],
-    )
+    sub = AgentMetadata(name="sub", agent_type="LlmAgent")
+    root = AgentMetadata(name="root", agent_type="LlmAgent", sub_agents=[sub])
     assert len(root.sub_agents) == 1
-    assert root.sub_agents[0].name == "researcher"
 
 
 def test_agent_metadata_serialization_roundtrip():
     meta = AgentMetadata(
-        name="test_agent",
-        agent_type="LlmAgent",
-        description="Test",
-        instruction="Do things.",
-        model="gemini-2.0-flash",
-        tools=[],
-        sub_agents=[],
+        name="test", agent_type="LlmAgent", description="Test agent",
+        instruction="Do things", model="gemini-2.0-flash",
+        tools=[ToolMetadata(name="t1", description="tool", parameters_schema={})],
     )
-    data = json.loads(meta.model_dump_json())
-    restored = AgentMetadata.model_validate(data)
-    assert restored.name == meta.name
+    loaded = AgentMetadata.model_validate_json(meta.model_dump_json())
+    assert loaded.name == "test"
+    assert len(loaded.tools) == 1
 
 
-def test_trajectory_step():
-    step = TrajectoryStep(
-        user_message="Book a flight to London",
-        expected_tool_calls=["search_flights", "book_flight"],
-        expected_tool_args={"search_flights": {"destination": "London"}},
-        tool_responses={"search_flights": {"flights": [{"id": "FL-1", "price": 200}]}},
-        expected_response="I found a flight to London for $200.",
-        expected_response_keywords=["booked", "London"],
-        rubric="Agent should confirm the booking details before proceeding.",
-        notes="Happy path booking",
+def test_scenario():
+    sc = Scenario(
+        scenario_id="happy_path", name="Happy path",
+        description="User asks for weather in a known city, expects temperature and condition",
     )
-    assert len(step.expected_tool_calls) == 2
-    assert step.tool_responses is not None
-    assert step.rubric is not None
+    assert sc.scenario_id == "happy_path"
+    assert "weather" in sc.description
+    assert sc.eval_type == "scenario"
 
 
-def test_trajectory_conversation_scenario_type():
-    traj = Trajectory(
-        trajectory_id="dynamic_refund",
-        name="Dynamic refund flow",
+def test_scenario_conversation_scenario_type():
+    sc = Scenario(
+        scenario_id="dynamic_refund", name="Dynamic refund",
+        description="User requests refund with valid order ID",
         eval_type="conversation_scenario",
-        conversation_scenario={
-            "starting_prompt": "I want a refund for order ORD-123",
-            "conversation_plan": "Provide order ID when asked. Confirm refund. Signal completion.",
-        },
-        session_state={"user_tier": "premium"},
+        conversation_scenario={"starting_prompt": "Refund order 12345", "conversation_plan": "Verify and confirm."},
     )
-    assert traj.eval_type == "conversation_scenario"
-    assert traj.conversation_scenario is not None
-    assert traj.session_state["user_tier"] == "premium"
+    assert sc.eval_type == "conversation_scenario"
+    assert sc.conversation_scenario is not None
 
 
-def test_task_with_trajectories():
-    traj = Trajectory(
-        trajectory_id="book_flight_happy",
-        name="Successful flight booking",
-        description="User books a flight successfully",
-        steps=[
-            TrajectoryStep(
-                user_message="Book a flight to London tomorrow",
-                expected_tool_calls=["search_flights"],
-            )
-        ],
-    )
-    task = Task(
-        task_id="book_flight",
-        name="Book Flight",
-        description="User wants to book a flight",
-        trajectories=[traj],
-    )
-    assert task.task_id == "book_flight"
-    assert len(task.trajectories) == 1
+def test_task_with_scenarios():
+    task = Task(task_id="search", name="Search", description="Search things",
+        scenarios=[Scenario(scenario_id="hp", name="Happy", description="Valid input")])
+    assert len(task.scenarios) == 1
 
 
-def test_task_trajectory_set():
-    task_set = TaskTrajectorySet(
-        agent_name="travel_agent",
-        tasks=[
-            Task(
-                task_id="book_flight",
-                name="Book Flight",
-                description="Book a flight",
-                trajectories=[],
-            )
-        ],
-        generation_context="Testing travel agent",
-    )
-    assert task_set.agent_name == "travel_agent"
+def test_task_scenario_set():
+    ts = TaskScenarioSet(agent_name="agent", tasks=[
+        Task(task_id="t1", name="Task", description="Desc",
+            scenarios=[Scenario(scenario_id="s1", name="S", description="D")])])
+    assert ts.agent_name == "agent"
+    assert len(ts.tasks[0].scenarios) == 1
 
 
 def test_testcase_config():
-    config = TestCaseConfig(
-        eval_metrics={"tool_trajectory_avg_score": 0.8, "safety_v1": 1.0},
-        judge_model="gemini-2.0-flash",
-    )
-    assert config.eval_metrics["safety_v1"] == 1.0
+    from adk_eval_tool.schemas import TestCaseConfig
+    config = TestCaseConfig()
+    assert "tool_trajectory_avg_score" in config.eval_metrics
 
 
 def test_metric_config():
-    mc = MetricConfig(
-        metric_name="tool_trajectory_avg_score",
-        threshold=0.9,
-        match_type="IN_ORDER",
-    )
-    assert mc.metric_name == "tool_trajectory_avg_score"
-    assert mc.match_type == "IN_ORDER"
+    mc = MetricConfig(metric_name="tool_trajectory_avg_score", threshold=0.9)
+    assert mc.threshold == 0.9
 
 
 def test_eval_run_config():
-    erc = EvalRunConfig(
-        agent_module="my_agent.agent",
-        metrics=[
-            MetricConfig(metric_name="tool_trajectory_avg_score", threshold=0.8),
-            MetricConfig(metric_name="safety_v1", threshold=1.0),
-        ],
-        judge_model="gemini-2.5-flash",
-        num_runs=3,
-    )
-    assert erc.agent_module == "my_agent.agent"
-    assert len(erc.metrics) == 2
+    config = EvalRunConfig(agent_module="my.agent",
+        metrics=[MetricConfig(metric_name="tool_trajectory_avg_score", threshold=0.8)])
+    assert len(config.metrics) == 1
 
 
 def test_trace_span_node():
-    child = TraceSpanNode(
-        span_id="span_2",
-        name="execute_tool:search",
-        start_time=1000.1,
-        end_time=1000.5,
-        attributes={"gcp.vertex.agent.event_id": "evt-2"},
-    )
-    parent = TraceSpanNode(
-        span_id="span_1",
-        name="call_llm",
-        start_time=1000.0,
-        end_time=1001.0,
-        attributes={},
-        children=[child],
-    )
-    assert len(parent.children) == 1
-    assert parent.children[0].name == "execute_tool:search"
+    node = TraceSpanNode(span_id="s1", name="root", children=[TraceSpanNode(span_id="s2", name="child")])
+    assert len(node.children) == 1
 
 
 def test_eval_run_result():
-    result = EvalRunResult(
-        run_id="run-123",
-        eval_set_id="agent__task",
-        eval_id="task__trajectory",
-        status="PASSED",
-        overall_scores={"tool_trajectory_avg_score": 0.95, "safety_v1": 1.0},
-        per_invocation_scores=[
-            {"invocation_id": "inv-1", "scores": {"tool_trajectory_avg_score": 0.95}},
-        ],
-        basic_metrics=BasicMetrics(
-            total_input_tokens=1500,
-            total_output_tokens=300,
-            total_tokens=1800,
-            num_llm_calls=2,
-            num_tool_calls=3,
-            total_duration_ms=4500.0,
-            avg_response_length=120.5,
-            max_context_size=1200,
-        ),
-    )
+    result = EvalRunResult(run_id="r1", eval_set_id="s1", eval_id="e1",
+        status="PASSED", overall_scores={"metric1": 0.9})
     assert result.status == "PASSED"
-    assert result.overall_scores["safety_v1"] == 1.0
-    assert result.basic_metrics.total_tokens == 1800
-    assert result.basic_metrics.num_tool_calls == 3

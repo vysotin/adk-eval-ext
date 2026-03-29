@@ -9,6 +9,7 @@ import streamlit as st
 
 from adk_eval_tool.schemas import AgentMetadata
 from adk_eval_tool.ui.components.json_editor import json_editor
+from adk_eval_tool.ui.output_dir import get_output_path
 
 
 def render():
@@ -42,7 +43,8 @@ def render():
     # Save / download
     col_save, col_download = st.columns(2)
     with col_save:
-        save_path = st.text_input("Save path", value=f"{metadata.name}_metadata.json")
+        default_path = get_output_path("metadata", f"{metadata.name}_metadata.json")
+        save_path = st.text_input("Save path", value=default_path)
         if st.button("Save to disk"):
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             Path(save_path).write_text(

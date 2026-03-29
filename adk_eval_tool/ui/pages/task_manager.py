@@ -1,4 +1,4 @@
-"""Page: Generate, view, and edit tasks & trajectories."""
+"""Page: Generate, view, and edit tasks & scenarios."""
 
 from __future__ import annotations
 
@@ -9,12 +9,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from adk_eval_tool.schemas import TaskTrajectorySet, Task, Trajectory, TrajectoryStep
+from adk_eval_tool.schemas import TaskScenarioSet, Task, Scenario
 from adk_eval_tool.ui.components.json_editor import json_editor
+from adk_eval_tool.ui.output_dir import get_output_path
 
 
 def render():
-    st.header("Tasks & Trajectories")
+    st.header("Tasks & Scenarios")
 
     if st.session_state.metadata is None:
         st.warning("No agent loaded. Launch with: `python -m adk_eval_tool <module> <variable>`")
@@ -34,14 +35,14 @@ def render():
 # ---------------------------------------------------------------------------
 
 def _render_generate_tab():
-    st.subheader("Generate Tasks & Base Trajectories")
+    st.subheader("Generate Tasks & Scenarios")
 
     constraints = st.text_area(
         "User constraints / context",
         placeholder="e.g., Focus on multi-tool tasks, include all sub-agents...",
         key="task_constraints",
     )
-    model = st.selectbox("Generator model", ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"])
+    model = st.selectbox("Generator model", ["gemini-2.5-flash", "gemini-2.5-pro"])
 
     if st.session_state.task_set and st.session_state.task_set.tasks:
         st.divider()
@@ -55,7 +56,7 @@ def _render_generate_tab():
         selected_tasks = []
 
     if st.button("Generate", key="gen_tasks"):
-        with st.spinner("Generating tasks and trajectories..."):
+        with st.spinner("Generating tasks and scenarios..."):
             from adk_eval_tool.task_generator import generate_tasks
 
             try:
@@ -92,7 +93,7 @@ def _render_generate_tab():
     if uploaded:
         try:
             data = json.loads(uploaded.read())
-            st.session_state.task_set = TaskTrajectorySet.model_validate(data)
+            st.session_state.task_set = TaskScenarioSet.model_validate(data)
             st.success(f"Loaded {len(st.session_state.task_set.tasks)} tasks")
         except Exception as e:
             st.error(f"Failed to load: {e}")
@@ -109,23 +110,20 @@ def _render_edit_tab():
 
     task_set = st.session_state.task_set
 
-    st.subheader(f"Agent: {task_set.agent_name} -- {len(task_set.tasks)} tasks")
+    st.subheader(f"Agent: {task_set.agent_name} — {len(task_set.tasks)} tasks")
 
-    # --- Per-task editing ---
     tasks_to_delete: list[int] = []
 
     for i, task in enumerate(task_set.tasks):
         with st.expander(
-            f"Task: {task.name} ({task.task_id}) -- {len(task.trajectories)} trajectories",
+            f"Task: {task.name} ({task.task_id}) — {len(task.scenarios)} scenarios",
             expanded=False,
         ):
-            # Header row with delete button
             col_info, col_del = st.columns([5, 1])
             with col_del:
                 if st.button("Delete Task", key=f"del_task_{i}", type="secondary"):
                     tasks_to_delete.append(i)
 
-            # Editable fields
             with col_info:
                 new_name = st.text_input("Name", value=task.name, key=f"tname_{i}")
                 new_desc = st.text_area("Description", value=task.description, key=f"tdesc_{i}", height=80)
@@ -135,77 +133,54 @@ def _render_edit_tab():
 
             st.divider()
 
-            # --- Per-trajectory editing within this task ---
-            trajs_to_delete: list[int] = []
+            # --- Per-scenario editing ---
+            scenarios_to_delete: list[int] = []
 
-            for j, traj in enumerate(task.trajectories):
-                st.markdown(f"**Trajectory: {traj.name}** (`{traj.trajectory_id}`)")
+            for j, scenario in enumerate(task.scenarios):
+                st.markdown(f"**Scenario: {scenario.name}** (`{scenario.scenario_id}`)")
 
-                col_traj, col_traj_del = st.columns([5, 1])
-                with col_traj_del:
-                    if st.button("Delete", key=f"del_traj_{i}_{j}", type="secondary"):
-                        trajs_to_delete.append(j)
+                col_sc, col_sc_del = st.columns([5, 1])
+                with col_sc_del:
+                    if st.button("Delete", key=f"del_sc_{i}_{j}", type="secondary"):
+                        scenarios_to_delete.append(j)
 
-                with col_traj:
-                    traj_name = st.text_input("Trajectory name", value=traj.name, key=f"trname_{i}_{j}")
-                    traj_desc = st.text_input("Trajectory description", value=traj.description, key=f"trdesc_{i}_{j}")
-                    if traj_name != traj.name:
-                        traj.name = traj_name
-                    if traj_desc != traj.description:
-                        traj.description = traj_desc
-
-                # Steps as structured editors
-                for k, step in enumerate(traj.steps):
-                    with st.container():
-                        st.caption(f"Step {k + 1}")
-                        cols = st.columns([3, 2])
-                        with cols[0]:
-                            new_msg = st.text_area(
-                                "User message", value=step.user_message,
-                                key=f"step_msg_{i}_{j}_{k}", height=60,
-                            )
-                            step.user_message = new_msg
-                        with cols[1]:
-                            tools_str = ", ".join(step.expected_tool_calls)
-                            new_tools_str = st.text_input(
-                                "Expected tool calls (comma-separated)",
-                                value=tools_str,
-                                key=f"step_tools_{i}_{j}_{k}",
-                            )
-                            step.expected_tool_calls = [
-                                t.strip() for t in new_tools_str.split(",") if t.strip()
-                            ]
-
-                # Add step button
-                if st.button("Add Step", key=f"add_step_{i}_{j}"):
-                    traj.steps.append(TrajectoryStep(user_message=""))
-                    st.rerun()
+                with col_sc:
+                    sc_name = st.text_input("Scenario name", value=scenario.name, key=f"scname_{i}_{j}")
+                    sc_desc = st.text_area(
+                        "Description (input type + expected output type)",
+                        value=scenario.description,
+                        key=f"scdesc_{i}_{j}",
+                        height=100,
+                    )
+                    if sc_name != scenario.name:
+                        scenario.name = sc_name
+                    if sc_desc != scenario.description:
+                        scenario.description = sc_desc
 
                 st.markdown("---")
 
-            # Delete marked trajectories
-            if trajs_to_delete:
-                for idx in sorted(trajs_to_delete, reverse=True):
-                    task.trajectories.pop(idx)
+            if scenarios_to_delete:
+                for idx in sorted(scenarios_to_delete, reverse=True):
+                    task.scenarios.pop(idx)
                 st.rerun()
 
-            # Add trajectory button
-            st.markdown("**Add trajectory to this task:**")
-            col_traj_id, col_traj_add = st.columns([3, 1])
-            with col_traj_id:
-                new_traj_name = st.text_input(
-                    "New trajectory name",
-                    placeholder="e.g., Basic search flow",
-                    key=f"new_traj_name_{i}",
+            # Add scenario button
+            st.markdown("**Add scenario to this task:**")
+            col_sc_id, col_sc_add = st.columns([3, 1])
+            with col_sc_id:
+                new_sc_name = st.text_input(
+                    "New scenario name",
+                    placeholder="e.g., Flight search with valid dates",
+                    key=f"new_sc_name_{i}",
                 )
-            with col_traj_add:
-                st.markdown("")  # spacing
-                if st.button("Add Trajectory", key=f"add_traj_{i}"):
-                    traj_id = new_traj_name.lower().replace(" ", "_") if new_traj_name else f"traj_{uuid.uuid4().hex[:6]}"
-                    task.trajectories.append(Trajectory(
-                        trajectory_id=traj_id,
-                        name=new_traj_name or traj_id,
-                        steps=[TrajectoryStep(user_message="")],
+            with col_sc_add:
+                st.markdown("")
+                if st.button("Add Scenario", key=f"add_sc_{i}"):
+                    sc_id = new_sc_name.lower().replace(" ", "_") if new_sc_name else f"sc_{uuid.uuid4().hex[:6]}"
+                    task.scenarios.append(Scenario(
+                        scenario_id=sc_id,
+                        name=new_sc_name or sc_id,
+                        description="",
                     ))
                     st.rerun()
 
@@ -219,7 +194,6 @@ def _render_edit_tab():
                     except Exception as e:
                         st.error(f"Invalid task data: {e}")
 
-    # Delete marked tasks
     if tasks_to_delete:
         for idx in sorted(tasks_to_delete, reverse=True):
             task_set.tasks.pop(idx)
@@ -243,7 +217,7 @@ def _render_edit_tab():
             task_id=task_id,
             name=task_name,
             description=new_task_desc,
-            trajectories=[],
+            scenarios=[],
         ))
         st.session_state.task_set = task_set
         st.rerun()
@@ -252,7 +226,8 @@ def _render_edit_tab():
     st.divider()
     col_save, col_download = st.columns(2)
     with col_save:
-        save_path = st.text_input("Save path", value=f"{task_set.agent_name}_tasks.json", key="task_save_path")
+        default_path = get_output_path("tasks", f"{task_set.agent_name}_tasks.json")
+        save_path = st.text_input("Save path", value=default_path, key="task_save_path")
         if st.button("Save to disk", key="save_tasks"):
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             Path(save_path).write_text(task_set.model_dump_json(indent=2))

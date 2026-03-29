@@ -1,22 +1,27 @@
 """Run ADK evaluations with trace collection and structured result capture.
 
-Uses ADK's LocalEvalService internally (same as AgentEvaluator) but
-captures EvalCaseResult objects instead of asserting, and sets up
-OpenTelemetry tracing to record execution spans.
+Provides a clear two-stage pipeline:
+  1. ``run_inference_only`` — run agent against eval cases, capture traces
+  2. ``run_eval_scoring``  — score persisted inference results against metrics
+
+The legacy ``run_evaluation`` convenience function chains both stages.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
 import time
 import uuid
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 from google.adk.agents.base_agent import BaseAgent
 
 from adk_eval_tool.schemas import (
     EvalRunConfig,
     EvalRunResult,
+    InferenceRunResult,
     MetricConfig,
     UserSimulatorConfig,
     CustomMetricDef,
@@ -28,6 +33,10 @@ from adk_eval_tool.eval_runner.trace_collector import (
 )
 from adk_eval_tool.eval_runner.result_store import ResultStore
 
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 def _build_eval_config_from_metrics(
     metrics: list[MetricConfig],
@@ -77,7 +86,6 @@ def _build_eval_config_from_metrics(
         else:
             criteria[mc.metric_name] = BaseCriterion(threshold=mc.threshold)
 
-    # Build user simulator config if provided
     adk_user_sim = None
     if user_sim:
         try:
@@ -92,7 +100,6 @@ def _build_eval_config_from_metrics(
         except ImportError:
             pass
 
-    # Build custom metrics config if provided
     adk_custom_metrics = None
     if custom_metrics:
         from google.adk.agents.common_configs import CodeConfig
@@ -138,13 +145,10 @@ import re as _re
 
 
 def _camel_to_snake(name: str) -> str:
-    """Convert camelCase to snake_case."""
-    s = _re.sub(r'([A-Z])', r'_\1', name).lower().lstrip('_')
-    return s
+    return _re.sub(r'([A-Z])', r'_\1', name).lower().lstrip('_')
 
 
 def _camel_to_snake_dict(obj):
-    """Recursively convert dict keys from camelCase to snake_case."""
     if isinstance(obj, dict):
         return {_camel_to_snake(k): _camel_to_snake_dict(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -152,38 +156,64 @@ def _camel_to_snake_dict(obj):
     return obj
 
 
-# Fields that ADK's Pydantic models accept (extras are forbidden).
 _FUNCTION_RESPONSE_FIELDS = {"will_continue", "scheduling", "parts", "id", "name", "response"}
 _FUNCTION_CALL_FIELDS = {"id", "args", "name", "partial_args", "will_continue"}
 
 
-def _sanitize_eval_set(data: dict) -> dict:
-    """Remove fields that ADK's strict Pydantic models reject.
+def _coerce_to_dict(value) -> dict:
+    """Ensure *value* is a dict.  JSON-encoded strings are decoded first."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            import json as _json
+            parsed = _json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError):
+            pass
+        return {"result": value}
+    return {"result": str(value)}
 
-    LLM-generated eval sets may include extra fields in tool_responses
-    (e.g. 'error') or tool_uses that FunctionResponse/FunctionCall don't allow.
+
+def _sanitize_eval_set(data: dict) -> dict:
+    """Remove / fix fields that ADK's strict Pydantic models reject.
+
+    Handles common issues produced by LLM-generated eval sets:
+    1. ``tool_responses[].response`` is a JSON *string* instead of a dict.
+    2. Extra fields in tool_uses / tool_responses that FunctionCall /
+       FunctionResponse don't accept.
+    3. ``tool_responses``, ``tool_uses``, or ``intermediate_responses``
+       placed at the invocation level instead of inside ``intermediate_data``.
     """
     for case in data.get("eval_cases", []):
         for inv in case.get("conversation", []):
+            # Fix misplaced fields: move them into intermediate_data
+            _INTERMEDIATE_KEYS = ("tool_uses", "tool_responses", "intermediate_responses")
+            for key in _INTERMEDIATE_KEYS:
+                if key in inv and key != "intermediate_data":
+                    idata = inv.setdefault("intermediate_data", {})
+                    if key not in idata:
+                        idata[key] = inv.pop(key)
+                    else:
+                        inv.pop(key)
+
             idata = inv.get("intermediate_data")
             if not idata:
                 continue
 
-            # Sanitize tool_responses — strip unknown fields
             if "tool_responses" in idata:
                 sanitized = []
                 for tr in idata["tool_responses"]:
                     if isinstance(tr, dict):
                         clean = {k: v for k, v in tr.items() if k in _FUNCTION_RESPONSE_FIELDS}
-                        # Must have at least 'name' and 'response'
                         if "name" in clean:
-                            clean.setdefault("response", {})
+                            clean["response"] = _coerce_to_dict(clean.get("response", {}))
                             sanitized.append(clean)
                     else:
                         sanitized.append(tr)
                 idata["tool_responses"] = sanitized
 
-            # Sanitize tool_uses — strip unknown fields
             if "tool_uses" in idata:
                 sanitized = []
                 for tu in idata["tool_uses"]:
@@ -199,58 +229,50 @@ def _sanitize_eval_set(data: dict) -> dict:
     return data
 
 
-async def run_evaluation(
+def _prepare_eval_set(eval_set_dict: dict):
+    """Convert camelCase dict → sanitised snake_case dict → ADK EvalSet."""
+    from google.adk.evaluation.eval_set import EvalSet
+
+    snake_dict = _camel_to_snake_dict(eval_set_dict)
+    snake_dict = _sanitize_eval_set(snake_dict)
+    return snake_dict, EvalSet.model_validate(snake_dict)
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: Inference only
+# ---------------------------------------------------------------------------
+
+
+async def run_inference_only(
     config: EvalRunConfig,
     eval_sets: list[dict],
-    result_store: Optional[ResultStore] = None,
-) -> list[EvalRunResult]:
-    """Run ADK evaluation with trace collection and result capture.
+    save_dir: Optional[str] = None,
+) -> list[InferenceRunResult]:
+    """Run agent inference without scoring.
 
     Args:
-        config: Evaluation run configuration.
+        config: Evaluation run configuration (agent module, num_runs …).
         eval_sets: List of EvalSet dicts (camelCase, ADK format).
-        result_store: Optional ResultStore to persist results.
+        save_dir: Optional directory to persist inference artefacts.
 
     Returns:
-        List of EvalRunResult with scores and trace trees.
+        List of InferenceRunResult with raw invocations and trace trees.
     """
-    from google.adk.evaluation.eval_set import EvalSet
     from google.adk.evaluation.base_eval_service import (
         InferenceRequest,
         InferenceConfig,
-        EvaluateRequest,
-        EvaluateConfig,
     )
     from google.adk.evaluation.local_eval_service import LocalEvalService
     from google.adk.evaluation.in_memory_eval_sets_manager import InMemoryEvalSetsManager
-    from google.adk.evaluation.eval_metrics import EvalStatus
-    from google.adk.evaluation.eval_config import get_eval_metrics_from_config
-    from contextlib import aclosing as Aclosing
-    import json
 
-    # Set up trace collection
     exporter = setup_trace_collection(config.trace_db_path)
-
-    # Load agent
     agent = _get_agent(config.agent_module, config.agent_name)
 
-    # Build ADK eval config from our metric configs
-    eval_config = _build_eval_config_from_metrics(
-        config.metrics, config.judge_model, config.user_simulator, config.custom_metrics
-    )
-    eval_metrics = get_eval_metrics_from_config(eval_config)
-
-    all_results: list[EvalRunResult] = []
+    all_results: list[InferenceRunResult] = []
     app_name = "eval_app"
 
     for eval_set_dict in eval_sets:
-        # Our eval set dicts use camelCase (evalSetId, evalCases) but ADK's
-        # EvalSet Pydantic model uses snake_case (eval_set_id, eval_cases).
-        # Convert before validation and sanitize LLM-generated fields that
-        # ADK's strict Pydantic models don't accept (e.g. 'error' in toolResponses).
-        snake_dict = _camel_to_snake_dict(eval_set_dict)
-        snake_dict = _sanitize_eval_set(snake_dict)
-        eval_set = EvalSet.model_validate(snake_dict)
+        snake_dict, eval_set = _prepare_eval_set(eval_set_dict)
 
         eval_sets_manager = InMemoryEvalSetsManager()
         eval_sets_manager.create_eval_set(
@@ -268,40 +290,153 @@ async def run_evaluation(
             eval_sets_manager=eval_sets_manager,
         )
 
-        # Run inference
-        inference_requests = [
-            InferenceRequest(
+        from adk_eval_tool.llm_runner import run_inference_with_timeout
+
+        for _ in range(config.num_runs):
+            req = InferenceRequest(
                 app_name=app_name,
                 eval_set_id=eval_set.eval_set_id,
                 inference_config=InferenceConfig(),
             )
-        ] * config.num_runs
+            inf_results_batch = await run_inference_with_timeout(
+                eval_service, req, timeout=300, max_retries=2,
+            )
+            for result in inf_results_batch:
+                    run_id = f"inf-{uuid.uuid4().hex[:8]}"
 
-        inference_results = []
-        for req in inference_requests:
-            async with Aclosing(
-                eval_service.perform_inference(inference_request=req)
-            ) as agen:
-                async for result in agen:
-                    inference_results.append(result)
+                    # Extract actual invocations summary
+                    actual_invs = []
+                    for inv in (result.inferences or []):
+                        inv_data: dict[str, Any] = {
+                            "invocation_id": inv.invocation_id,
+                            "user_message": _content_to_text(inv.user_content),
+                            "actual_response": _content_to_text(inv.final_response),
+                        }
+                        if inv.intermediate_data and hasattr(inv.intermediate_data, "tool_uses"):
+                            inv_data["actual_tool_calls"] = [
+                                {"name": tc.name, "args": dict(tc.args) if tc.args else {}}
+                                for tc in inv.intermediate_data.tool_uses
+                            ]
+                        actual_invs.append(inv_data)
 
-        # Run evaluation
+                    # Trace tree
+                    trace_tree = None
+                    basic_metrics = None
+                    if result.session_id:
+                        try:
+                            exporter.force_flush()
+                            trees = get_trace_tree_for_session(exporter, result.session_id)
+                            trace_tree = trees[0] if trees else None
+                        except Exception:
+                            pass
+                    if trace_tree:
+                        basic_metrics = compute_basic_metrics(trace_tree)
+
+                    inf_result = InferenceRunResult(
+                        run_id=run_id,
+                        eval_set_id=eval_set.eval_set_id,
+                        eval_id=result.eval_case_id,
+                        session_id=result.session_id or "",
+                        inference_result_json=json.loads(result.model_dump_json()),
+                        eval_set_json=snake_dict,
+                        actual_invocations=actual_invs,
+                        basic_metrics=basic_metrics,
+                        trace_tree=trace_tree,
+                        timestamp=time.time(),
+                    )
+                    all_results.append(inf_result)
+
+    # Persist to disk
+    if save_dir:
+        out = Path(save_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        for r in all_results:
+            (out / f"{r.run_id}.json").write_text(r.model_dump_json(indent=2))
+
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: Offline evaluation (scoring)
+# ---------------------------------------------------------------------------
+
+
+async def run_eval_scoring(
+    config: EvalRunConfig,
+    inference_results: list[InferenceRunResult],
+    save_dir: Optional[str] = None,
+    result_store: Optional[ResultStore] = None,
+) -> list[EvalRunResult]:
+    """Score persisted inference results against metrics (no agent needed).
+
+    Args:
+        config: Evaluation run configuration (metrics, judge_model …).
+        inference_results: Output of ``run_inference_only()``.
+        save_dir: Optional directory to persist eval results.
+        result_store: Optional ResultStore to persist results.
+
+    Returns:
+        List of EvalRunResult with scores and trace trees.
+    """
+    from google.adk.evaluation.base_eval_service import (
+        EvaluateRequest,
+        EvaluateConfig,
+        InferenceResult,
+    )
+    from google.adk.evaluation.eval_set import EvalSet
+    from google.adk.evaluation.local_eval_service import LocalEvalService
+    from google.adk.evaluation.in_memory_eval_sets_manager import InMemoryEvalSetsManager
+    from google.adk.evaluation.eval_metrics import EvalStatus
+    from google.adk.evaluation.eval_config import get_eval_metrics_from_config
+    from contextlib import aclosing as Aclosing
+
+    eval_config = _build_eval_config_from_metrics(
+        config.metrics, config.judge_model, config.user_simulator, config.custom_metrics
+    )
+    eval_metrics = get_eval_metrics_from_config(eval_config)
+
+    all_results: list[EvalRunResult] = []
+    app_name = "eval_app"
+
+    for inf_result in inference_results:
+        eval_set = EvalSet.model_validate(inf_result.eval_set_json)
+
+        eval_sets_manager = InMemoryEvalSetsManager()
+        eval_sets_manager.create_eval_set(
+            app_name=app_name, eval_set_id=eval_set.eval_set_id
+        )
+        for eval_case in eval_set.eval_cases:
+            eval_sets_manager.add_eval_case(
+                app_name=app_name,
+                eval_set_id=eval_set.eval_set_id,
+                eval_case=eval_case,
+            )
+
+        adk_inference_result = InferenceResult.model_validate(
+            inf_result.inference_result_json
+        )
+
+        eval_service = LocalEvalService(
+            root_agent=None,  # type: ignore[arg-type]
+            eval_sets_manager=eval_sets_manager,
+        )
+
         evaluate_request = EvaluateRequest(
-            inference_results=inference_results,
+            inference_results=[adk_inference_result],
             evaluate_config=EvaluateConfig(eval_metrics=eval_metrics),
         )
+
         async with Aclosing(
             eval_service.evaluate(evaluate_request=evaluate_request)
         ) as agen:
             async for eval_case_result in agen:
                 run_id = f"run-{uuid.uuid4().hex[:8]}"
 
-                # Extract overall scores
-                overall_scores = {}
-                for metric_result in eval_case_result.overall_eval_metric_results:
-                    overall_scores[metric_result.metric_name] = metric_result.score
+                overall_scores = {
+                    mr.metric_name: mr.score
+                    for mr in eval_case_result.overall_eval_metric_results
+                }
 
-                # Extract per-invocation scores with tool call details
                 per_inv_scores = []
                 for per_inv in eval_case_result.eval_metric_result_per_invocation:
                     actual_tools = []
@@ -337,23 +472,6 @@ async def run_evaluation(
                     }
                     per_inv_scores.append(inv_data)
 
-                # Get trace tree for this session
-                trace_tree = None
-                if eval_case_result.session_id:
-                    try:
-                        exporter.force_flush()
-                        trees = get_trace_tree_for_session(
-                            exporter, eval_case_result.session_id
-                        )
-                        trace_tree = trees[0] if trees else None
-                    except Exception:
-                        pass
-
-                # Compute basic metrics from trace tree
-                basic_metrics = None
-                if trace_tree:
-                    basic_metrics = compute_basic_metrics(trace_tree)
-
                 status_map = {
                     EvalStatus.PASSED: "PASSED",
                     EvalStatus.FAILED: "FAILED",
@@ -369,14 +487,46 @@ async def run_evaluation(
                     ),
                     overall_scores=overall_scores,
                     per_invocation_scores=per_inv_scores,
-                    basic_metrics=basic_metrics,
-                    session_id=eval_case_result.session_id,
-                    trace_tree=trace_tree,
+                    basic_metrics=inf_result.basic_metrics,
+                    session_id=inf_result.session_id,
+                    trace_tree=inf_result.trace_tree,
                     timestamp=time.time(),
                 )
-
                 all_results.append(run_result)
                 if result_store:
                     result_store.save_result(run_result)
 
+    # Persist to disk
+    if save_dir:
+        out = Path(save_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        for r in all_results:
+            (out / f"{r.run_id}.json").write_text(r.model_dump_json(indent=2))
+
     return all_results
+
+
+# ---------------------------------------------------------------------------
+# Legacy convenience function
+# ---------------------------------------------------------------------------
+
+
+async def run_evaluation(
+    config: EvalRunConfig,
+    eval_sets: list[dict],
+    result_store: Optional[ResultStore] = None,
+) -> list[EvalRunResult]:
+    """Run inference + scoring in one call (legacy API).
+
+    Args:
+        config: Evaluation run configuration.
+        eval_sets: List of EvalSet dicts (camelCase, ADK format).
+        result_store: Optional ResultStore to persist results.
+
+    Returns:
+        List of EvalRunResult with scores and trace trees.
+    """
+    inference_results = await run_inference_only(config, eval_sets)
+    return await run_eval_scoring(
+        config, inference_results, result_store=result_store
+    )

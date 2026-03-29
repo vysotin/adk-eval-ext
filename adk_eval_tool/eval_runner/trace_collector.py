@@ -88,10 +88,12 @@ def setup_trace_collection(db_path: str):
     Returns:
         The SqliteSpanExporter instance (for later span retrieval).
     """
+    from pathlib import Path as _Path
     from google.adk.telemetry.sqlite_span_exporter import SqliteSpanExporter
     from google.adk.telemetry.setup import maybe_set_otel_providers, OTelHooks
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+    _Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     exporter = SqliteSpanExporter(db_path=db_path)
     hooks = OTelHooks(span_processors=[BatchSpanProcessor(exporter)])
     maybe_set_otel_providers(otel_hooks_to_setup=[hooks])

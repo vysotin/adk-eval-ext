@@ -634,7 +634,7 @@ wrapper = LangChainADKWrapper(
     name="langchain_weather_agent",
     langchain_agent=executor,
     tool_mocks={
-        "get_weather": [{"matchArgs": {}, "response": {"temp": 72}}]
+        "get_weather": [{"matchArgs": {}, "response": {"output": 72}}]
     },
 )
 

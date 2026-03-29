@@ -93,7 +93,7 @@ def search_hotels(city: str, check_in: str, check_out: str) -> dict:
 
 flight_agent = Agent(
     name="flight_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description="Specialist for searching and recommending flights. Delegate to this agent when the user needs flight information.",
     instruction="""You are a flight specialist. Use the search_flights tool to find flights.
 When presenting results:
@@ -107,7 +107,7 @@ When presenting results:
 
 hotel_agent = Agent(
     name="hotel_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description="Specialist for searching and recommending hotels. Delegate to this agent when the user needs hotel information.",
     instruction="""You are a hotel specialist. Use the search_hotels tool to find hotels.
 When presenting results:
@@ -124,7 +124,7 @@ When presenting results:
 
 root_agent = Agent(
     name="travel_coordinator",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description="A travel planning coordinator that delegates to flight and hotel specialists.",
     instruction="""You are a travel planning coordinator. You help users plan trips by coordinating
 flight and hotel bookings.

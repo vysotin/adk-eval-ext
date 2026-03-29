@@ -19,16 +19,43 @@ import tempfile
 from pathlib import Path
 
 
+def _resolve_module_to_path(module_path: str) -> str | None:
+    """Resolve a dotted module path to a filesystem .py path."""
+    parts = module_path.split(".")
+    # Try as a direct path to a .py file within the current directory
+    candidate = Path.cwd() / Path(*parts).with_suffix(".py")
+    if candidate.exists():
+        return str(candidate)
+    # Try importlib to find the file
+    try:
+        spec = importlib.util.find_spec(module_path)
+        if spec and spec.origin:
+            return spec.origin
+    except (ModuleNotFoundError, ValueError):
+        pass
+    return None
+
+
 def parse_agent_from_module(module_path: str, agent_var: str):
-    """Import the agent module and parse the agent object.
+    """Parse the agent from live object (default) or source code (fallback).
 
     Returns:
         Tuple of (AgentMetadata, error_message). On success error_message is None.
         On failure AgentMetadata is None.
     """
+    # Try live-object parser first (import + introspect)
     try:
         module = importlib.import_module(module_path)
     except ModuleNotFoundError as e:
+        # Module not importable — try source-code parser
+        source_path = _resolve_module_to_path(module_path)
+        if source_path:
+            from adk_eval_tool.agent_parser import parse_agent_from_source
+            try:
+                metadata = parse_agent_from_source(source_path, agent_variable=agent_var)
+                return metadata, None
+            except (ValueError, FileNotFoundError) as e2:
+                return None, str(e2)
         return None, f"Module not found: {module_path}\n  {e}"
     except Exception as e:
         return None, f"Failed to import module '{module_path}': {e}"
@@ -99,7 +126,7 @@ def main():
         print(f"  Sub-agents: {[a.name for a in metadata.sub_agents]}")
     print()
 
-    # Write metadata to a temp file that app.py will pick up
+    # Write metadata to a output file that app.py will pick up
     metadata_json = metadata.model_dump_json(indent=2)
     tmpdir = tempfile.mkdtemp(prefix="adk_eval_")
     metadata_path = Path(tmpdir) / "preloaded_metadata.json"

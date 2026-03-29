@@ -37,59 +37,33 @@ class AgentMetadata(BaseModel):
 # --- Intents & Scenarios ---
 
 
-class TrajectoryStep(BaseModel):
-    """A single conversation turn in a trajectory.
+class Scenario(BaseModel):
+    """A test scenario for a task.
 
-    Models a full ADK Invocation: user message -> tool calls -> response.
-    expected_tool_calls and expected_tool_args define the expected tool use
-    sequence. tool_responses provides reference data for hallucination metrics.
-    intermediate_responses captures expected agent reasoning between tool calls.
+    Describes a combination of input type (intent variation) and expected
+    output type in plain text.  Scenarios do not prescribe specific
+    conversation turns — those are generated at the test-case stage.
     """
 
-    user_message: str
-    expected_tool_calls: list[str] = Field(default_factory=list)
-    expected_tool_args: Optional[dict[str, dict[str, Any]]] = None
-    tool_responses: Optional[dict[str, Any]] = None
-    expected_response: str = ""
-    expected_response_keywords: list[str] = Field(default_factory=list)
-    intermediate_responses: list[dict[str, Any]] = Field(default_factory=list)
-    rubric: Optional[str] = None
-    notes: str = ""
-
-
-class Trajectory(BaseModel):
-    """A base trajectory (happy path) for a task.
-
-    Defines the expected tool call sequence for a single user task.
-    Only base/happy-path trajectories are stored in metadata. Failure paths
-    and edge cases are generated at the test case generation stage.
-
-    Supports two modes matching ADK's EvalCase:
-    - Static trajectory: steps[] defines fixed conversation turns (maps to ADK 'conversation')
-    - Dynamic simulation: conversation_scenario defines a starting prompt + plan
-      (maps to ADK 'conversation_scenario' with user simulator)
-    """
-
-    trajectory_id: str
+    scenario_id: str
     name: str
     description: str = ""
-    eval_type: str = "trajectory"  # "trajectory" | "conversation_scenario"
-    steps: list[TrajectoryStep] = Field(default_factory=list)
+    eval_type: str = "scenario"  # "scenario" | "conversation_scenario"
     conversation_scenario: Optional[dict[str, str]] = None
     session_state: Optional[dict[str, Any]] = None
 
 
 class Task(BaseModel):
-    """A user task with associated base trajectories."""
+    """A user task with associated scenarios."""
 
     task_id: str
     name: str
     description: str
-    trajectories: list[Trajectory] = Field(default_factory=list)
+    scenarios: list[Scenario] = Field(default_factory=list)
 
 
-class TaskTrajectorySet(BaseModel):
-    """Complete set of tasks and trajectories for an agent."""
+class TaskScenarioSet(BaseModel):
+    """Complete set of tasks and scenarios for an agent."""
 
     agent_name: str
     tasks: list[Task] = Field(default_factory=list)
@@ -136,7 +110,7 @@ class TestGenConfig(BaseModel):
         ScenarioWeight(name="ambiguous_request", weight=25),
     ])
     num_simulations_per_task: int = 3
-    judge_model: str = "gemini-2.0-flash"
+    judge_model: str = "gemini-2.5-flash"
     tool_trajectory_match_type: str = "IN_ORDER"
 
 
@@ -146,10 +120,9 @@ class TestCaseConfig(BaseModel):
     eval_metrics: dict[str, float] = Field(
         default_factory=lambda: {
             "tool_trajectory_avg_score": 0.8,
-            "safety_v1": 1.0,
         }
     )
-    judge_model: str = "gemini-2.0-flash"
+    judge_model: str = "gemini-2.5-flash"
     num_runs: int = 2
     tool_trajectory_match_type: str = "IN_ORDER"
 
@@ -236,6 +209,26 @@ class InvocationScore(BaseModel):
     scores: dict[str, Optional[float]] = Field(default_factory=dict)
     input_tokens: int = 0
     output_tokens: int = 0
+
+
+class InferenceRunResult(BaseModel):
+    """Result of inference for a single eval case (no scoring).
+
+    Captures what the agent actually did without judging correctness.
+    The raw inference_result_json is preserved so that offline evaluation
+    can be run later without re-running the agent.
+    """
+
+    run_id: str
+    eval_set_id: str
+    eval_id: str
+    session_id: str = ""
+    inference_result_json: dict[str, Any] = Field(default_factory=dict)
+    eval_set_json: dict[str, Any] = Field(default_factory=dict)
+    actual_invocations: list[dict[str, Any]] = Field(default_factory=list)
+    basic_metrics: Optional[BasicMetrics] = None
+    trace_tree: Optional[TraceSpanNode] = None
+    timestamp: float = 0.0
 
 
 class EvalRunResult(BaseModel):

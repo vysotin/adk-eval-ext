@@ -1,4 +1,4 @@
-"""Function tools for the task/trajectory generator agent."""
+"""Function tools for the task/scenario generator agent."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from adk_eval_tool.schemas import AgentMetadata, TaskTrajectorySet
+from adk_eval_tool.schemas import AgentMetadata, TaskScenarioSet
 
 
 def format_agent_metadata_summary(metadata: AgentMetadata) -> str:
@@ -30,16 +30,16 @@ def format_agent_metadata_summary(metadata: AgentMetadata) -> str:
 
 
 def validate_task_output(data: dict[str, Any]) -> dict[str, Any]:
-    """Validate that generated output matches TaskTrajectorySet schema.
+    """Validate that generated output matches TaskScenarioSet schema.
 
     Args:
-        data: The generated task/trajectory data as a dict.
+        data: The generated task/scenario data as a dict.
 
     Returns:
         Dict with 'valid' bool and optional 'errors' list.
     """
     try:
-        TaskTrajectorySet.model_validate(data)
+        TaskScenarioSet.model_validate(data)
         return {"valid": True, "errors": []}
     except ValidationError as e:
         return {
@@ -49,10 +49,10 @@ def validate_task_output(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_output(output_json: str) -> str:
-    """Save the final task/trajectory output. Called by the agent when done.
+    """Save the final task/scenario output. Called by the agent when done.
 
     Args:
-        output_json: The complete JSON string of the TaskTrajectorySet.
+        output_json: The complete JSON string of the TaskScenarioSet.
 
     Returns:
         Validation result message.

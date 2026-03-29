@@ -61,7 +61,7 @@ def get_forecast(city: str, days: int = 3) -> dict:
 
 root_agent = Agent(
     name="weather_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     description="A weather assistant that provides current conditions and multi-day forecasts for cities worldwide.",
     instruction="""You are a helpful weather assistant. You can:
 1. Check current weather conditions for any city using the get_weather tool

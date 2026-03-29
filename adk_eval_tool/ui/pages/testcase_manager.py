@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 
 from adk_eval_tool.schemas import TestCaseConfig, TestGenConfig, MultiTurnConfig, ScenarioWeight
 from adk_eval_tool.ui.components.json_editor import json_editor
+from adk_eval_tool.ui.output_dir import get_output_path
 
 
 def render():
@@ -20,7 +23,7 @@ def render():
         st.warning("No agent loaded. Launch with: `python -m adk_eval_tool <module> <variable>`")
         return
 
-    tab_gen, tab_edit = st.tabs(["Generate", "View / Edit"])
+    tab_gen, tab_edit, tab_versions = st.tabs(["Generate", "View / Edit", "Dataset Versions"])
 
     with tab_gen:
         _render_generate_tab()
@@ -28,67 +31,70 @@ def render():
     with tab_edit:
         _render_edit_tab()
 
+    with tab_versions:
+        _render_versions_tab()
+
 
 def _render_generate_tab():
     st.subheader("Generate Test Cases")
 
     if st.session_state.task_set is None:
-        st.warning("Generate tasks first (Tasks & Trajectories page).")
+        st.warning("Generate tasks first (Tasks & Scenarios page).")
         return
 
-    # --- General settings ---
-    st.markdown("#### General Settings")
-    col_gen1, col_gen2, col_gen3 = st.columns(3)
-    with col_gen1:
-        total_per_task = st.number_input(
-            "Total test cases per task",
-            min_value=1, max_value=50, value=10,
-            help="Total number of test cases to generate per task across all scenario types",
-            key="tc_total_per_task",
+    task_set = st.session_state.task_set
+
+    # --- Total & task selection ---
+    st.markdown("#### Total Test Cases")
+
+    task_options = {t.task_id: t.name for t in task_set.tasks}
+    selected = st.multiselect(
+        "Generate for tasks (all if empty)",
+        options=list(task_options.keys()),
+        format_func=lambda x: f"{x} — {task_options[x]}",
+        key="tc_task_selection",
+    )
+    tasks_to_process = (
+        [t for t in task_set.tasks if t.task_id in selected]
+        if selected
+        else task_set.tasks
+    )
+    num_tasks = len(tasks_to_process)
+
+    col_total, col_model, col_match = st.columns(3)
+    with col_total:
+        total_test_cases = st.number_input(
+            "Total test cases (all tasks)",
+            min_value=1, max_value=500, value=max(num_tasks * 10, 10),
+            help="Total number of test cases distributed across all selected tasks",
+            key="tc_total",
         )
-    with col_gen2:
+    with col_model:
         judge_model = st.selectbox(
             "Generator model",
-            ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+            ["gemini-2.5-flash", "gemini-2.5-pro"],
             key="tc_judge_model",
         )
-    with col_gen3:
+    with col_match:
         match_type = st.selectbox(
             "Tool trajectory match type",
             ["IN_ORDER", "EXACT", "ANY_ORDER"],
             key="tc_match_type",
         )
 
-    st.divider()
-
-    # --- Multi-turn test cases ---
-    st.markdown("#### Multi-Turn Test Cases")
-    enable_multi_turn = st.checkbox("Enable multi-turn test cases", value=True, key="tc_multi_turn_enabled")
-
-    multi_turn = MultiTurnConfig(enabled=enable_multi_turn)
-    if enable_multi_turn:
-        col_mt1, col_mt2 = st.columns(2)
-        with col_mt1:
-            mt_min = st.number_input("Min turns", min_value=2, max_value=10, value=2, key="tc_mt_min")
-            mt_max = st.number_input("Max turns", min_value=2, max_value=20, value=5, key="tc_mt_max")
-        with col_mt2:
-            mt_clarification = st.checkbox("Include clarification turns", value=True, key="tc_mt_clarification")
-            mt_correction = st.checkbox("Include correction turns", value=True, key="tc_mt_correction")
-            mt_follow_up = st.checkbox("Include follow-up turns", value=True, key="tc_mt_followup")
-        multi_turn = MultiTurnConfig(
-            enabled=True,
-            min_turns=mt_min,
-            max_turns=mt_max,
-            include_clarification=mt_clarification,
-            include_correction=mt_correction,
-            include_follow_up=mt_follow_up,
-        )
+    # Compute per-task distribution
+    if num_tasks > 0:
+        base_per_task = total_test_cases // num_tasks
+        remainder = total_test_cases % num_tasks
+        per_task_counts = [base_per_task + (1 if i < remainder else 0) for i in range(num_tasks)]
+    else:
+        per_task_counts = []
 
     st.divider()
 
     # --- Scenario types with weights ---
-    st.markdown("#### Scenario Types & Weights")
-    st.caption(f"Distribute {total_per_task} test cases across scenario types. Weights should sum to 100%.")
+    st.markdown("#### Path Types & Weights")
+    st.caption("Distribute test cases across path types. Weights should sum to 100%.")
 
     all_scenario_types = [
         "happy_path", "failure_path", "edge_case", "multi_turn",
@@ -98,7 +104,7 @@ def _render_generate_tab():
 
     scenario_weights: list[ScenarioWeight] = []
     scenario_cols = st.columns([2, 1, 1])
-    scenario_cols[0].markdown("**Scenario type**")
+    scenario_cols[0].markdown("**Path type**")
     scenario_cols[1].markdown("**Enabled**")
     scenario_cols[2].markdown("**Weight %**")
 
@@ -122,14 +128,7 @@ def _render_generate_tab():
 
     total_scenario_weight = sum(sw.weight for sw in scenario_weights)
     if scenario_weights and total_scenario_weight != 100:
-        st.warning(f"Scenario weights sum to {total_scenario_weight}%, should be 100%.")
-    elif scenario_weights:
-        # Show distribution preview
-        preview_parts = []
-        for sw in scenario_weights:
-            count = round(total_per_task * sw.weight / 100)
-            preview_parts.append(f"{sw.name}: ~{count}")
-        st.caption(f"Distribution: {', '.join(preview_parts)}")
+        st.warning(f"Path type weights sum to {total_scenario_weight}%, should be 100%.")
 
     st.divider()
 
@@ -177,6 +176,31 @@ def _render_generate_tab():
 
     st.divider()
 
+    # --- Multi-turn test cases ---
+    st.markdown("#### Multi-Turn Settings")
+    enable_multi_turn = st.checkbox("Enable multi-turn test cases", value=True, key="tc_multi_turn_enabled")
+
+    multi_turn = MultiTurnConfig(enabled=enable_multi_turn)
+    if enable_multi_turn:
+        col_mt1, col_mt2 = st.columns(2)
+        with col_mt1:
+            mt_min = st.number_input("Min turns", min_value=2, max_value=10, value=2, key="tc_mt_min")
+            mt_max = st.number_input("Max turns", min_value=2, max_value=20, value=5, key="tc_mt_max")
+        with col_mt2:
+            mt_clarification = st.checkbox("Include clarification turns", value=True, key="tc_mt_clarification")
+            mt_correction = st.checkbox("Include correction turns", value=True, key="tc_mt_correction")
+            mt_follow_up = st.checkbox("Include follow-up turns", value=True, key="tc_mt_followup")
+        multi_turn = MultiTurnConfig(
+            enabled=True,
+            min_turns=mt_min,
+            max_turns=mt_max,
+            include_clarification=mt_clarification,
+            include_correction=mt_correction,
+            include_follow_up=mt_follow_up,
+        )
+
+    st.divider()
+
     # --- User Simulations ---
     st.markdown("#### User Simulations")
     num_simulations = st.number_input(
@@ -188,50 +212,55 @@ def _render_generate_tab():
 
     st.divider()
 
-    # --- Build configs ---
-    gen_config = TestGenConfig(
-        total_test_cases_per_task=total_per_task,
-        multi_turn=multi_turn,
-        scenario_weights=scenario_weights,
-        failure_weights=failure_weights,
-        num_simulations_per_task=num_simulations,
-        judge_model=judge_model,
-        tool_trajectory_match_type=match_type,
-    )
+    # --- Distribution preview ---
+    st.markdown("#### Distribution Preview")
+    if num_tasks > 0 and scenario_weights and total_scenario_weight == 100:
+        preview_data = []
+        for i, task in enumerate(tasks_to_process):
+            tc_count = per_task_counts[i]
+            row = {"Task": f"{task.name} ({task.task_id})", "Cases": tc_count}
+            for sw in scenario_weights:
+                row[sw.name] = max(1, round(tc_count * sw.weight / 100))
+            preview_data.append(row)
+        preview_data.append({
+            "Task": "**Total**",
+            "Cases": total_test_cases,
+            **{sw.name: sum(r[sw.name] for r in preview_data) for sw in scenario_weights},
+        })
+        st.dataframe(preview_data, use_container_width=True, hide_index=True)
+    elif num_tasks > 0:
+        for i, task in enumerate(tasks_to_process):
+            st.caption(f"- {task.name}: {per_task_counts[i]} test cases")
+    else:
+        st.caption("No tasks selected.")
 
-    config = TestCaseConfig(
-        eval_metrics={
-            "tool_trajectory_avg_score": 0.8,
-            "safety_v1": 1.0,
-        },
-        judge_model=judge_model,
-        tool_trajectory_match_type=match_type,
-    )
+    st.divider()
 
-    # --- Task selection ---
-    task_set = st.session_state.task_set
-    task_options = {t.task_id: t.name for t in task_set.tasks}
-    selected = st.multiselect(
-        "Generate for tasks (all if empty)",
-        options=list(task_options.keys()),
-        format_func=lambda x: f"{x} -- {task_options[x]}",
-    )
-
-    save_dir = st.text_input("Save directory", value="eval_datasets")
+    save_dir = st.text_input("Save directory", value=get_output_path("eval_datasets"))
 
     if st.button("Generate Test Cases"):
         with st.spinner("Generating evaluation datasets..."):
             from adk_eval_tool.testcase_generator import generate_test_cases
 
-            tasks_to_process = (
-                [t for t in task_set.tasks if t.task_id in selected]
-                if selected
-                else task_set.tasks
+            config = TestCaseConfig(
+                eval_metrics={"tool_trajectory_avg_score": 0.8},
+                judge_model=judge_model,
+                tool_trajectory_match_type=match_type,
             )
 
             results = []
             progress = st.progress(0)
             for idx, task in enumerate(tasks_to_process):
+                tc_count = per_task_counts[idx] if idx < len(per_task_counts) else 10
+                gen_config = TestGenConfig(
+                    total_test_cases_per_task=tc_count,
+                    multi_turn=multi_turn,
+                    scenario_weights=scenario_weights,
+                    failure_weights=failure_weights,
+                    num_simulations_per_task=num_simulations,
+                    judge_model=judge_model,
+                    tool_trajectory_match_type=match_type,
+                )
                 try:
                     eval_set = asyncio.run(generate_test_cases(
                         metadata=st.session_state.metadata,
@@ -246,7 +275,7 @@ def _render_generate_tab():
                 progress.progress((idx + 1) / len(tasks_to_process))
 
             st.session_state.eval_sets = results
-            st.success(f"Generated {len(results)} eval sets")
+            st.success(f"Generated {len(results)} eval sets with {total_test_cases} total test cases")
 
     st.divider()
     uploaded = st.file_uploader("Or upload existing .evalset.json", type=["json"], key="evalset_upload")
@@ -340,7 +369,7 @@ def _render_edit_tab():
                     st.success("EvalSet updated from raw JSON.")
 
     st.divider()
-    save_dir = st.text_input("Save directory", value="eval_datasets", key="save_dir_edit")
+    save_dir = st.text_input("Save directory", value=get_output_path("eval_datasets"), key="save_dir_edit")
     if st.button("Save all to disk", key="save_evalsets"):
         path = Path(save_dir)
         path.mkdir(parents=True, exist_ok=True)
@@ -472,3 +501,126 @@ def _render_conversation_scenario_editor(case: dict, es_idx: int, case_idx: int)
     )
 
     case["conversation_scenario"] = cs
+
+
+# ---------------------------------------------------------------------------
+# Dataset Versions tab
+# ---------------------------------------------------------------------------
+
+def _versions_dir() -> str:
+    return get_output_path("versions")
+
+
+def _render_versions_tab():
+    st.subheader("Create New Version")
+
+    if not st.session_state.eval_sets and not st.session_state.task_set:
+        st.warning("No data to version. Generate tasks or test cases first.")
+        return
+
+    version_name = st.text_input(
+        "Version name",
+        value=datetime.now().strftime("%Y%m%d_%H%M%S"),
+        key="version_name",
+    )
+    version_notes = st.text_area("Version notes", placeholder="What changed...", key="version_notes")
+    source_dir = st.text_input("Source eval_datasets directory", value=get_output_path("eval_datasets"), key="version_src_dir")
+
+    if st.button("Create Version", key="create_version"):
+        version_path = Path(_versions_dir()) / version_name
+        version_path.mkdir(parents=True, exist_ok=True)
+
+        if st.session_state.metadata:
+            (version_path / "metadata.json").write_text(
+                st.session_state.metadata.model_dump_json(indent=2)
+            )
+        if st.session_state.task_set:
+            (version_path / "tasks.json").write_text(
+                st.session_state.task_set.model_dump_json(indent=2)
+            )
+
+        src = Path(source_dir)
+        if src.exists():
+            evalsets_dir = version_path / "evalsets"
+            evalsets_dir.mkdir(exist_ok=True)
+            for f in src.glob("*.evalset.json"):
+                shutil.copy2(f, evalsets_dir / f.name)
+
+        if st.session_state.eval_sets:
+            evalsets_dir = version_path / "evalsets"
+            evalsets_dir.mkdir(exist_ok=True)
+            for es in st.session_state.eval_sets:
+                eid = es.get("evalSetId", "unknown")
+                (evalsets_dir / f"{eid}.evalset.json").write_text(json.dumps(es, indent=2))
+
+        manifest = {
+            "version": version_name,
+            "created_at": datetime.now().isoformat(),
+            "notes": version_notes,
+            "agent_name": st.session_state.metadata.name if st.session_state.metadata else None,
+            "num_tasks": len(st.session_state.task_set.tasks) if st.session_state.task_set else 0,
+            "num_eval_sets": len(st.session_state.eval_sets),
+        }
+        (version_path / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        st.success(f"Version '{version_name}' created at {version_path}")
+
+    st.divider()
+
+    # Browse existing versions
+    st.subheader("Browse Versions")
+    versions_path = Path(_versions_dir())
+    if not versions_path.exists():
+        st.info("No versions created yet.")
+        return
+
+    versions = sorted([d for d in versions_path.iterdir() if d.is_dir()], reverse=True)
+    if not versions:
+        st.info("No versions found.")
+        return
+
+    for version_dir in versions:
+        manifest_file = version_dir / "manifest.json"
+        manifest = json.loads(manifest_file.read_text()) if manifest_file.exists() else {"version": version_dir.name}
+
+        with st.expander(
+            f"v{manifest.get('version', version_dir.name)} — "
+            f"{manifest.get('created_at', 'unknown')} — "
+            f"{manifest.get('notes', '')[:50]}"
+        ):
+            st.json(manifest)
+
+            evalsets_dir = version_dir / "evalsets"
+            if evalsets_dir.exists():
+                st.markdown("**Eval Sets:**")
+                for f in evalsets_dir.glob("*.evalset.json"):
+                    st.markdown(f"- `{f.name}`")
+
+            col_load, col_delete = st.columns(2)
+            with col_load:
+                if st.button("Load version", key=f"load_{version_dir.name}"):
+                    _load_version(version_dir)
+                    st.success(f"Loaded version {version_dir.name}")
+                    st.rerun()
+            with col_delete:
+                if st.button("Delete version", key=f"del_{version_dir.name}", type="secondary"):
+                    shutil.rmtree(version_dir)
+                    st.success(f"Deleted version {version_dir.name}")
+                    st.rerun()
+
+
+def _load_version(version_dir: Path):
+    from adk_eval_tool.schemas import AgentMetadata, TaskScenarioSet
+
+    meta_file = version_dir / "metadata.json"
+    if meta_file.exists():
+        st.session_state.metadata = AgentMetadata.model_validate(json.loads(meta_file.read_text()))
+
+    tasks_file = version_dir / "tasks.json"
+    if tasks_file.exists():
+        st.session_state.task_set = TaskScenarioSet.model_validate(json.loads(tasks_file.read_text()))
+
+    evalsets_dir = version_dir / "evalsets"
+    if evalsets_dir.exists():
+        st.session_state.eval_sets = [
+            json.loads(f.read_text()) for f in sorted(evalsets_dir.glob("*.evalset.json"))
+        ]
